@@ -1,0 +1,313 @@
+name: Release wheels + PyPI
+
+# Trigger on version tags (e.g. v0.1.0, v0.2.0-rc1) or manual dispatch.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─── Tag / version sanity check ────────────────────────────────────────────
+  #
+  # Refuses to build if the pushed tag (`vX.Y.Z`) doesn't match the version
+  # in [workspace.package] of Cargo.toml. Catches "I tagged but forgot to
+  # bump" before we waste 4× wheel build minutes on a wrong-version release.
+  # All build jobs `needs: verify-version`, so a mismatch fails the whole
+  # workflow at the first step.
+  verify-version:
+    name: Verify tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -euo pipefail
+          # Extract the version from the [workspace.package] section.
+          PKG_VERSION=$(awk '
+            /^\[workspace\.package\]/ { in_section = 1; next }
+            /^\[/                     { in_section = 0 }
+            in_section && /^version[[:space:]]*=/ {
+              gsub(/^version[[:space:]]*=[[:space:]]*"|"[[:space:]]*$/, "")
+              print
+              exit
+            }
+          ' Cargo.toml)
+          echo "Cargo.toml:    $PKG_VERSION"
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+          # Only enforce tag<->version match when triggered by a tag push.
+          # workflow_dispatch and re-runs without a tag fall through.
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "Not a tag push; skipping tag<->version match."
+            exit 0
+          fi
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Tag:           $TAG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match [workspace.package].version = \"$PKG_VERSION\". Bump Cargo.toml or retag."
+            exit 1
+          fi
+
+  # ─── Linux wheels ───────────────────────────────────────────────────────────
+  linux:
+    name: Linux ${{ matrix.target }} (${{ matrix.libc }})
+    runs-on: ubuntu-latest
+    needs: [verify-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64
+            libc: manylinux
+          - target: aarch64
+            libc: manylinux
+          - target: x86_64
+            libc: musllinux
+          - target: aarch64
+            libc: musllinux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        # cs-dmri itself has no C dependencies, but odx-rs builds HDF5 from
+        # source (hdf5-metno, static), which needs CMake >= 3.26. Set the
+        # CMAKE env var so the cmake-rs crate uses our pip-installed cmake;
+        # before-script-linux populates /opt/_pipcmake/bin/cmake. This block
+        # is odx-rs's, kept in step with it.
+        env:
+          CMAKE: /opt/_pipcmake/bin/cmake
+        with:
+          target: ${{ matrix.target }}
+          # abi3-py39 wheels work for all CPython >= 3.9.
+          args: --release --out dist
+          working-directory: python
+          # `2_28` (AlmaLinux 9 / glibc 2.28) instead of the older `auto`
+          # (= `2014` = manylinux_2_17, CentOS 7 / glibc 2.17). The 2014
+          # cross image ships Python 3.6, which maturin rejects (needs
+          # >=3.7) and which is below our abi3-py39 baseline. 2_28 has
+          # Python 3.9+ baked in. The compat trade-off is glibc 2.28+
+          # required at install time — i.e. RHEL/AlmaLinux 8+, Debian 10+,
+          # Ubuntu 18.10+ (essentially anything from the last ~6 years).
+          manylinux: ${{ matrix.libc == 'manylinux' && '2_28' || 'musllinux_1_2' }}
+          before-script-linux: |
+            # hdf5-metno-src builds HDF5 from source via cmake; it requires
+            # CMake >= 3.26. Both manylinux_2_17 (AlmaLinux yum cmake 3.20)
+            # and musllinux_1_2 (Alpine apk cmake 3.22) ship too-old
+            # versions, and cross-compile images from messense (used for
+            # aarch64) don't have /opt/python/ at all. Install a recent
+            # cmake via pip from whatever Python we can find, and pin its
+            # path via the CMAKE env var.
+            #
+            # `set -ex` prints every command so failures are diagnosable
+            # from the workflow log without re-running.
+            set -ex
+
+            uname -a
+            cat /etc/os-release || true
+            ls -d /opt/python 2>&1 || echo "(no /opt/python — likely a cross-compile image)"
+
+            # Install minimal build tools + a system Python if needed.
+            # The cross-compile images have package managers but often no
+            # Python preinstalled, so add it here.
+            if command -v apk >/dev/null 2>&1; then
+              apk update
+              apk add --no-cache make gcc g++ musl-dev linux-headers perl bash python3 py3-pip
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y make gcc gcc-c++ perl python3 python3-pip
+            elif command -v yum >/dev/null 2>&1; then
+              yum install -y make gcc gcc-c++ perl python3 python3-pip
+            elif command -v apt-get >/dev/null 2>&1; then
+              apt-get update
+              apt-get install -y make gcc g++ perl python3 python3-pip
+            fi
+
+            # Resolve a pip we can use. Prefer the PyPA-style /opt/python
+            # bundled CPython on native images; on *cross-compile* images
+            # (messense/*-cross), /opt/python contains TARGET-arch binaries
+            # that can't execute on the build host (kernel returns ENOEXEC,
+            # bash falls back to interpreting the pip script and chokes on
+            # Python syntax). Probe each candidate by running --version
+            # before committing to it.
+            PIP_CMD=""
+            PYBIN=""
+            for cand in /opt/python/cp310-cp310/bin /opt/python/cp311-cp311/bin \
+                        /opt/python/cp312-cp312/bin /opt/python/cp39-cp39/bin \
+                        /opt/python/cp313-cp313/bin; do
+              if [ -d "$cand" ] && "$cand/python" --version >/dev/null 2>&1; then
+                PYBIN="$cand"
+                PIP_CMD="$cand/pip"
+                break
+              fi
+            done
+            if [ -z "$PIP_CMD" ]; then
+              if command -v pip3 >/dev/null 2>&1; then
+                PIP_CMD="pip3"
+              elif command -v python3 >/dev/null 2>&1; then
+                python3 -m ensurepip --default-pip 2>/dev/null || true
+                PIP_CMD="python3 -m pip"
+              else
+                echo "::error::No Python/pip found in build container"
+                exit 1
+              fi
+            fi
+            echo "Using PIP_CMD='$PIP_CMD' (PYBIN='${PYBIN:-system}')"
+
+            # If we found a /opt/python/cp* Python, make sure it shadows
+            # any older system python3 on PATH. maturin invokes `python3`
+            # from PATH after this script runs, and we've seen older
+            # cross-compile images leave a too-old `/usr/bin/python3` in
+            # place (e.g., 3.6 on the legacy manylinux2014 cross image).
+            if [ -n "$PYBIN" ]; then
+              ln -sf "$PYBIN/python" /usr/local/bin/python3
+              ln -sf "$PYBIN/python" /usr/local/bin/python
+            fi
+
+            # Install cmake>=3.26 from PyPI. `--break-system-packages` is
+            # for PEP 668-marked Pythons (some distros); harmless on others.
+            $PIP_CMD install --no-cache-dir --upgrade --break-system-packages "cmake>=3.26" 2>/dev/null \
+              || $PIP_CMD install --no-cache-dir --upgrade "cmake>=3.26"
+
+            # Find where the pip-installed cmake landed. With /opt/python
+            # it's in $PYBIN/cmake; with system pip it's wherever pip puts
+            # console scripts — discoverable via `command -v cmake` after
+            # install (PATH is updated by the install).
+            INSTALLED_CMAKE=""
+            if [ -n "$PYBIN" ] && [ -x "$PYBIN/cmake" ]; then
+              INSTALLED_CMAKE="$PYBIN/cmake"
+            elif command -v cmake >/dev/null 2>&1; then
+              INSTALLED_CMAKE=$(command -v cmake)
+            else
+              # Last-ditch: ask pip where it put the script.
+              INSTALLED_CMAKE=$($PIP_CMD show -f cmake 2>/dev/null | awk '/Location:/ {loc=$2} /bin\/cmake/ {print loc"/"$1}' | head -1)
+              # That gives a path relative to site-packages; resolve to abs.
+              if [ -n "$INSTALLED_CMAKE" ]; then
+                INSTALLED_CMAKE=$(realpath "$INSTALLED_CMAKE" 2>/dev/null || echo "$INSTALLED_CMAKE")
+              fi
+            fi
+            if [ -z "$INSTALLED_CMAKE" ] || [ ! -x "$INSTALLED_CMAKE" ]; then
+              echo "::error::Could not locate pip-installed cmake binary"
+              $PIP_CMD show -f cmake || true
+              exit 1
+            fi
+            echo "Pip-installed cmake at: $INSTALLED_CMAKE"
+
+            # Pin the path to match the CMAKE env var set on the step.
+            mkdir -p /opt/_pipcmake/bin
+            ln -sf "$INSTALLED_CMAKE" /opt/_pipcmake/bin/cmake
+
+            # Shadow common system locations as a PATH fallback.
+            for target in /usr/local/bin/cmake /usr/bin/cmake; do
+              parent=$(dirname "$target")
+              [ -d "$parent" ] && ln -sf "$INSTALLED_CMAKE" "$target" || true
+            done
+
+            # Diagnostic: confirm the right cmake is found via every route.
+            echo "--- cmake versions:"
+            "$INSTALLED_CMAKE" --version
+            /opt/_pipcmake/bin/cmake --version
+            cmake --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}-${{ matrix.libc }}
+          path: python/dist
+
+  # ─── macOS wheels (x86_64 + Apple Silicon) ─────────────────────────────────
+  #
+  # Runner mapping:
+  #   - aarch64  → macos-14         (Apple Silicon, free)
+  #   - x86_64   → macos-15-intel   (Intel x86_64 on macOS 15; GitHub's
+  #                                   recommended migration path for x86_64
+  #                                   builds, supported until August 2027).
+  #
+  # The older `macos-13` runner pool is queue-pressured; `macos-15-intel`
+  # is the current Intel target with much better availability. There's no
+  # `macos-15-intel-large` etc. — Intel hardware is being retired, so
+  # macos-15-intel is the long tail.
+  macos:
+    name: macOS ${{ matrix.target }}
+    runs-on: ${{ matrix.target == 'aarch64' && 'macos-14' || 'macos-15-intel' }}
+    needs: [verify-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          working-directory: python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: python/dist
+
+  # ─── Windows wheels ────────────────────────────────────────────────────────
+  windows:
+    name: Windows ${{ matrix.target }}
+    runs-on: windows-latest
+    needs: [verify-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          working-directory: python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-${{ matrix.target }}
+          path: python/dist
+
+  # ─── Source distribution ───────────────────────────────────────────────────
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    needs: [verify-version]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+          working-directory: python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: python/dist
+
+  publish:
+    name: Publish to PyPI
+    needs: [linux, macos, windows, sdist]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: pypi
+      url: https://pypi.org/p/cs-dmri
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Inspect artifacts
+        run: ls -la dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          # Switch to test.pypi.org for dry-runs by uncommenting:
+          # repository-url: https://test.pypi.org/legacy/
+          skip-existing: true

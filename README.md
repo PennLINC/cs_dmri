@@ -99,6 +99,23 @@ and the synthetic-harness comparison in
 
 ---
 
+## Python
+
+`pip install cs-dmri` (or `maturin develop --release` inside `python/`) gives a
+dipy-style Python API over everything below, with results identical to the
+command-line tools:
+
+```python
+import cs_dmri as cs
+
+dwi = cs.DWI.from_files("dwi.nii.gz", "dwi.bval", "dwi.bvec", mask="mask.nii.gz")
+print(dwi.qc())                                      # NDC, contrast ratio, outlier slices, coherence
+fit = cs.ShoreModel(dwi.gtab).fit(dwi)               # cs-fit
+ss3t = cs.ss3t_pipeline(dwi)                         # cs-ss3t-full
+```
+
+See [python/README.md](python/README.md).
+
 ## Quality control (`cs-qc`)
 
 `cs-qc` scores a DWI series and writes the results as JSON and/or a one-row TSV.
