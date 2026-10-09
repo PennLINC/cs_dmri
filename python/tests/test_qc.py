@@ -88,7 +88,8 @@ def test_report_row_and_dictionary(series):
     assert 0.0 <= r.fixel_coherence <= 1.0
     desc = cs.QCReport.column_descriptions(prefix="raw_")
     assert set(desc) == set(row)
-    assert desc["raw_ndc"]["Replaces"] == "raw_neighbor_corr"
+    assert "`neighbor_corr`" in desc["raw_ndc"]["Description"]
+    assert set().union(*map(set, desc.values())) <= {"LongName", "Description", "Units"}
     assert "Units" in desc["raw_max_b"]
     json.dumps(desc)
 
@@ -99,3 +100,21 @@ def test_bad_inputs_raise(series):
         cs.qc.neighboring_dwi_correlation(data[..., :5], (bvals, bvecs))
     with pytest.raises(ValueError, match="mask shape"):
         cs.qc.neighboring_dwi_correlation(data, (bvals, bvecs), np.ones((2, 2, 2), bool))
+
+
+def test_gradient_table_check_names_a_flipped_axis():
+    """Fibers along circles about z: a flipped x axis is found and named."""
+    x, y = np.meshgrid(np.arange(24) - 11.5, np.arange(24) - 11.5, indexing="ij")
+    r = np.hypot(x, y)
+    tangent = np.stack([-y / r, x / r, np.zeros_like(r)], -1)[:, :, None].repeat(6, axis=2)
+    fa = np.full(tangent.shape[:3], 0.6, np.float32)
+    mask = np.ones(tangent.shape[:3], bool)
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    good = cs.qc.fixel_coherence(tangent, fa, mask, affine, world_directions=True)
+    assert good["gradient_table"]["best"] == "012" and good["gradient_table_ratio"] == 1.0
+    assert good["warnings"] == [] and good["chain_length_mm"] > 0
+    flipped = tangent * np.array([-1.0, 1.0, 1.0])
+    bad = cs.qc.fixel_coherence(flipped, fa, mask, affine, world_directions=True)
+    assert bad["gradient_table"]["best"] == "012fx"
+    assert bad["gradient_table_ratio"] > 1.2
+    assert "012fx" in bad["warnings"][0]

@@ -53,15 +53,13 @@ def columns() -> list[str]:
 
 def column_descriptions(prefix: str = "") -> dict:
     """BIDS-style data dictionary for the QC table: ``{column: {"LongName",
-    "Description", "Units"?, "Replaces"?}}``, ready to dump as the TSV's JSON
-    sidecar. ``Replaces`` gives the name of a previously used column that a
-    column supersedes."""
+    "Description", "Units"?}}``, ready to dump as the TSV's JSON sidecar.
+    Descriptions name the DSI Studio column (as qsiprep names it) that
+    measures the same property, where there is one."""
     out = {}
     for c in _cs_dmri.qc_columns():
         c = dict(c)
         name = c.pop("name")
-        if "Replaces" in c and prefix:
-            c["Replaces"] = prefix + c["Replaces"]
         out[prefix + name] = c
     return out
 
@@ -85,6 +83,14 @@ class QCReport:
     """(n_volumes, n_slices): each slice's inconsistency ratio (NaN where unscored)."""
     fixel_coherence: float | None = None
     coherence_elasticity: float | None = None
+    fixel_chain_length: float | None = None
+    """FA-weighted mean fiber-chain length, in mm."""
+    gradient_table_ratio: float | None = None
+    """Best over as-used chain length across the 24 axis permutations and flips
+    of the gradient table; 1 when the table as used is the most coherent."""
+    gradient_table_best: str | None = None
+    """Label of the most coherent candidate (``"012"``: the table as used), in
+    the axes of the RAS+-reoriented grid."""
     mask_source: str | None = None
     mask_voxels: int | None = None
     warnings: tuple[str, ...] = ()
@@ -119,6 +125,8 @@ class QCReport:
             "dwi_contrast_ratio": self.dwi_contrast_ratio,
             "dwi_contrast_ratio_masked": self.dwi_contrast_ratio_masked,
             "n_outlier_slices": self.n_outlier_slices, "fixel_coherence": self.fixel_coherence,
+            "fixel_chain_length": self.fixel_chain_length,
+            "gradient_table_ratio": self.gradient_table_ratio,
         }
         return {prefix + c: values[c] for c in columns()}
 
@@ -131,7 +139,8 @@ class QCReport:
             f"NDC {f(self.ndc)} (masked {f(self.ndc_masked)})",
             f"DWI contrast ratio {f(self.dwi_contrast_ratio)} (masked {f(self.dwi_contrast_ratio_masked)}{grade})",
             f"outlier slices {self.n_outlier_slices}",
-            f"fixel coherence {f(self.fixel_coherence)}",
+            f"fixel coherence {f(self.fixel_coherence)}, chain length {f(self.fixel_chain_length)} mm",
+            f"gradient-table ratio {f(self.gradient_table_ratio)} (best {self.gradient_table_best or 'n/a'})",
         ]
         lines += [f"WARNING: {w}" for w in self.warnings]
         return "\n".join(lines)
@@ -186,7 +195,9 @@ def fixel_coherence(principal_dir, fa, mask, affine, *, world_directions=False, 
     thresholded by FA. Directions are in the image's voxel-axis frame unless
     ``world_directions``. Returns a dict with ``coherence``,
     ``threshold_elasticity``, ``evaluated_voxels``, ``connected_voxels``,
-    ``fa_threshold``."""
+    ``fa_threshold``, ``chain_length_mm``, ``chain_weight_over_20mm``,
+    ``gradient_table`` (the permutation/flip check), ``gradient_table_ratio``
+    and ``warnings``."""
     return _cs_dmri.qc_fixel_coherence(
         np.asarray(principal_dir, dtype=np.float32), np.asarray(fa, dtype=np.float32),
         np.asarray(mask, dtype=bool), np.asarray(affine, dtype=np.float64),
@@ -213,7 +224,7 @@ def assess(data, gtab, mask=None, *, affine=None, coherence=True, tensor_fit=Non
         slice_threshold=slice_threshold, n_threads=n_threads)
     warnings = list(extra_warnings) + list(r["warnings"])
 
-    coh = elasticity = None
+    coh = elasticity = chain = gt_ratio = gt_best = None
     if coherence:
         if affine is None:
             warnings.append("fixel coherence skipped: no affine")
@@ -224,7 +235,10 @@ def assess(data, gtab, mask=None, *, affine=None, coherence=True, tensor_fit=Non
                 from .dti import RestoreModel
                 tensor_fit = RestoreModel(gtab).fit(vol, m, n_threads=n_threads)
             c = fixel_coherence(tensor_fit.principal_dir, tensor_fit.fa, m, affine, n_threads=n_threads)
-            coh, elasticity = c["coherence"], c["threshold_elasticity"]
+            coh, elasticity, chain = c["coherence"], c["threshold_elasticity"], c["chain_length_mm"]
+            gt_ratio = c["gradient_table_ratio"]
+            gt_best = (c["gradient_table"] or {}).get("best")
+            warnings.extend(c["warnings"])
 
     if voxel_size is not None:
         voxel_size = tuple(float(x) for x in voxel_size)
@@ -246,6 +260,9 @@ def assess(data, gtab, mask=None, *, affine=None, coherence=True, tensor_fit=Non
         outlier_ratio=r["outlier_ratio"],
         fixel_coherence=coh,
         coherence_elasticity=elasticity,
+        fixel_chain_length=chain,
+        gradient_table_ratio=gt_ratio,
+        gradient_table_best=gt_best,
         mask_source=mask_source if mask_source is not None else ("provided" if m is not None else None),
         mask_voxels=r["mask_voxels"],
         warnings=tuple(warnings),

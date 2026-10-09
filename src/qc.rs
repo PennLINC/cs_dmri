@@ -460,6 +460,12 @@ pub struct CoherenceOptions {
     /// Maximum angle (degrees) between neighboring directions for them to
     /// count as connected. Default 15.
     pub angle_degrees: f32,
+    /// Also score the 24 axis permutations and flips of the gradient table by
+    /// chain length. Default true.
+    pub check_gradient_table: bool,
+    /// The gradient-table check scores only voxels at or above this quantile
+    /// of FA. Default 0.9 (odx-rs `DEFAULT_BTABLE_QUANTILE`).
+    pub gradient_table_quantile: f32,
 }
 
 impl Default for CoherenceOptions {
@@ -467,6 +473,55 @@ impl Default for CoherenceOptions {
         Self {
             quantile: odx_rs::DEFAULT_QC_QUANTILE,
             angle_degrees: 15.0,
+            check_gradient_table: true,
+            gradient_table_quantile: odx_rs::DEFAULT_BTABLE_QUANTILE,
+        }
+    }
+}
+
+/// Which axis permutation or flip of the gradient table gives the most
+/// coherent principal-direction field, scored by FA-weighted mean chain
+/// length (odx-rs `check_btable`).
+#[derive(Debug, Clone, Serialize)]
+pub struct GradientTableCheck {
+    /// Label of the most coherent candidate in the axes of the RAS+-reoriented
+    /// grid, e.g. `012` (the table as used) or `012fx` (x negated).
+    pub best: String,
+    /// True when no candidate beats the table as used.
+    pub current_is_best: bool,
+    /// Weighted mean chain length (mm) with the table as used.
+    pub current_chain_length_mm: Option<f64>,
+    /// Weighted mean chain length (mm) with the best candidate.
+    pub best_chain_length_mm: Option<f64>,
+}
+
+impl CoherenceReport {
+    /// Messages for conditions worth a look: currently, a gradient table that
+    /// another axis permutation or flip makes more coherent.
+    pub fn warnings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(g) = &self.gradient_table {
+            if !g.current_is_best {
+                let ratio = g.ratio().map_or("n/a".to_string(), |r| format!("{r:.2}"));
+                out.push(format!(
+                    "gradient table: the axis permutation/flip {} gives {ratio} times longer fiber chains \
+                     than the table as used (labels are in the axes of the RAS+-reoriented grid); check \
+                     the bvec orientation",
+                    g.best
+                ));
+            }
+        }
+        out
+    }
+}
+
+impl GradientTableCheck {
+    /// Best over current chain length: 1 when the table as used is the most
+    /// coherent, larger when another permutation or flip is.
+    pub fn ratio(&self) -> Option<f64> {
+        match (self.best_chain_length_mm, self.current_chain_length_mm) {
+            (Some(b), Some(c)) if c > 0.0 => Some(b / c),
+            _ => None,
         }
     }
 }
@@ -483,6 +538,14 @@ pub struct CoherenceReport {
     pub evaluated_voxels: usize,
     pub connected_voxels: usize,
     pub fa_threshold: Option<f32>,
+    /// FA-weighted mean length (mm) of the chains the principal directions
+    /// form when each is linked to its mutually best-aligned continuation in
+    /// the neighboring voxels (odx-rs `compute_fixel_chains`).
+    pub chain_length_mm: Option<f64>,
+    /// Share of evaluated FA weight in chains at least 20 mm long.
+    pub chain_weight_over_20mm: Option<f64>,
+    /// `None` unless `options.check_gradient_table`.
+    pub gradient_table: Option<GradientTableCheck>,
     pub options: CoherenceOptions,
 }
 
@@ -502,8 +565,8 @@ pub fn fixel_coherence(
 ) -> Result<CoherenceReport> {
     use crate::io::odx_out::{canonicalize_array3_f32, canonicalize_array4, canonicalize_bool_mask};
     use odx_rs::{
-        CanonTransform, CoherenceMode, FixelQcOptions, OdxBuilder, ThresholdMode,
-        coherence_threshold_elasticity, compute_primary_coherence, dtype::DType,
+        CanonTransform, CoherenceMode, FixelQcOptions, OdxBuilder, ThresholdMode, check_btable,
+        coherence_threshold_elasticity, compute_fixel_chains, compute_primary_coherence, dtype::DType,
     };
     fn err<E: std::fmt::Display>(e: E) -> CsDmriError {
         CsDmriError::Other(format!("fixel coherence: {e}"))
@@ -572,12 +635,31 @@ pub fn fixel_coherence(
     };
     let report = compute_primary_coherence(&odx, &qc_opts).map_err(err)?;
     let elasticity = coherence_threshold_elasticity(&odx, &qc_opts, CoherenceMode::Primary).map_err(err)?;
+    let chains = compute_fixel_chains(&odx, &qc_opts).map_err(err)?;
+    let gradient_table = if opts.check_gradient_table {
+        let bt_opts = FixelQcOptions {
+            threshold: ThresholdMode::Quantile(opts.gradient_table_quantile),
+            ..qc_opts.clone()
+        };
+        let c = check_btable(&odx, &bt_opts, CoherenceMode::Chain).map_err(err)?;
+        Some(GradientTableCheck {
+            best: c.best,
+            current_is_best: c.current_is_best,
+            current_chain_length_mm: c.current_coherence_index,
+            best_chain_length_mm: c.best_coherence_index,
+        })
+    } else {
+        None
+    };
     Ok(CoherenceReport {
         coherence: report.coherence_index,
         threshold_elasticity: elasticity,
         evaluated_voxels: report.evaluated_voxels,
         connected_voxels: report.connected_voxels,
         fa_threshold: report.threshold_value,
+        chain_length_mm: chains.weighted_mean_length_mm,
+        chain_weight_over_20mm: chains.weight_in_chains_over_20mm,
+        gradient_table,
         options: *opts,
     })
 }
@@ -698,23 +780,30 @@ pub struct QcColumn {
     #[serde(rename = "LongName")]
     pub long_name: &'static str,
     #[serde(rename = "Description")]
-    pub description: &'static str,
+    pub description: String,
     #[serde(rename = "Units", skip_serializing_if = "Option::is_none")]
     pub units: Option<&'static str>,
-    /// The DSI Studio column (as named in qsiprep) this one replaces, when the
-    /// computation changed enough to warrant a new name.
-    #[serde(rename = "Replaces", skip_serializing_if = "Option::is_none")]
-    pub replaces: Option<&'static str>,
+    /// The DSI Studio column (as named in qsiprep) that measures the same
+    /// property with a different computation, when there is one. Named in
+    /// `description`; not a separate key, which BIDS does not define.
+    #[serde(skip)]
+    pub counterpart: Option<&'static str>,
 }
 
 /// The QC table's columns, in output order.
 pub fn qc_columns() -> Vec<QcColumn> {
-    let c = |name, long_name, description, units, replaces| QcColumn {
+    let c = |name, long_name, description: &str, units, counterpart: Option<&'static str>| QcColumn {
         name,
         long_name,
-        description,
+        description: match counterpart {
+            Some(dsi) => format!(
+                "{description} Measures the same property as DSI Studio's `{dsi}` (qsiprep's name), \
+                 computed differently."
+            ),
+            None => description.to_string(),
+        },
         units,
-        replaces,
+        counterpart,
     };
     vec![
         c("dimension_x", "Image dimension (x)", "Number of voxels along the first image axis.", None, None),
@@ -784,14 +873,38 @@ pub fn qc_columns() -> Vec<QcColumn> {
             None,
             Some("coherence_index"),
         ),
+        c(
+            "fixel_chain_length",
+            "Fiber chain length",
+            "FA-weighted mean length of the chains formed by linking each RESTORE principal direction to \
+             its mutually best-aligned continuation (within 15 degrees) in the neighboring voxels. Voxels \
+             below the 10th percentile of FA are not evaluated. Noise, misregistration and a wrong \
+             gradient table break chains.",
+            Some("mm"),
+            None,
+        ),
+        c(
+            "gradient_table_ratio",
+            "Gradient-table check ratio",
+            "Fiber chain length (over voxels in the top 10% of FA) with the most coherent of the 24 axis \
+             permutations and flips of the gradient table, divided by that with the table as used. Equal \
+             to 1 when the table as used is the most coherent; larger values indicate a permuted or \
+             flipped gradient table.",
+            None,
+            None,
+        ),
     ]
 }
 
 impl QcReport {
     /// The flat table row, keyed by [`qc_columns`] names. `voxel_size` and
-    /// `fixel_coherence` come from outside the model-free report; missing
-    /// values are `None`.
-    pub fn row(&self, voxel_size: Option<[f64; 3]>, fixel_coherence: Option<f64>) -> Vec<(&'static str, Option<f64>)> {
+    /// `coherence` come from outside the model-free report; missing values
+    /// are `None`.
+    pub fn row(
+        &self,
+        voxel_size: Option<[f64; 3]>,
+        coherence: Option<&CoherenceReport>,
+    ) -> Vec<(&'static str, Option<f64>)> {
         let vs = |i: usize| voxel_size.map(|v| v[i]);
         vec![
             ("dimension_x", Some(self.dimensions[0] as f64)),
@@ -808,7 +921,12 @@ impl QcReport {
             ("dwi_contrast_ratio", self.dwi_contrast_ratio),
             ("dwi_contrast_ratio_masked", self.dwi_contrast_ratio_masked),
             ("n_outlier_slices", Some(self.n_outlier_slices() as f64)),
-            ("fixel_coherence", fixel_coherence),
+            ("fixel_coherence", coherence.and_then(|c| c.coherence)),
+            ("fixel_chain_length", coherence.and_then(|c| c.chain_length_mm)),
+            (
+                "gradient_table_ratio",
+                coherence.and_then(|c| c.gradient_table.as_ref()).and_then(|g| g.ratio()),
+            ),
         ]
     }
 }
@@ -1102,5 +1220,37 @@ mod tests {
         let b = fixel_coherence(random.view(), fa.view(), mask.view(), affine, true, &opts).unwrap();
         assert!(a.coherence.unwrap() > 0.95, "smooth {:?}", a.coherence);
         assert!(b.coherence.unwrap() < 0.5, "random {:?}", b.coherence);
+        assert!(a.chain_length_mm.unwrap() > 4.0 * b.chain_length_mm.unwrap());
+    }
+
+    /// Fibers along circles about the z axis: the table as used is the most
+    /// coherent, and a flipped x axis is found and named.
+    #[test]
+    fn gradient_table_check_finds_a_flip() {
+        let (nx, ny, nz) = (24, 24, 6);
+        let affine = [[2.0, 0.0, 0.0, 0.0], [0.0, 2.0, 0.0, 0.0], [0.0, 0.0, 2.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+        let fa = Array3::<f32>::from_elem((nx, ny, nz), 0.6);
+        let mask = Array3::<bool>::from_elem((nx, ny, nz), true);
+        let tangent = |x: usize, y: usize, flip: f32| {
+            let (dx, dy) = (x as f32 - 11.5, y as f32 - 11.5);
+            let r = (dx * dx + dy * dy).sqrt().max(1e-3);
+            [flip * -dy / r, dx / r, 0.0]
+        };
+        let field = |flip: f32| {
+            Array4::<f32>::from_shape_fn((nx, ny, nz, 3), |(x, y, _, c)| tangent(x, y, flip)[c])
+        };
+        let opts = CoherenceOptions::default();
+        let good = fixel_coherence(field(1.0).view(), fa.view(), mask.view(), affine, true, &opts).unwrap();
+        let g = good.gradient_table.as_ref().unwrap();
+        assert!(g.current_is_best, "{g:?}");
+        assert!(good.warnings().is_empty());
+        assert_eq!(g.ratio(), Some(1.0));
+
+        let bad = fixel_coherence(field(-1.0).view(), fa.view(), mask.view(), affine, true, &opts).unwrap();
+        let g = bad.gradient_table.as_ref().unwrap();
+        assert!(!g.current_is_best, "{g:?}");
+        assert_eq!(g.best, "012fx");
+        assert!(g.ratio().unwrap() > 1.2, "{g:?}");
+        assert_eq!(bad.warnings().len(), 1);
     }
 }

@@ -1,5 +1,19 @@
 # Changes
 
+## Unreleased
+
+- 3D-SHORE fitting stops with an error on data with a single non-zero b-value
+  shell, whose radial decay it cannot determine. `allow_single_shell` /
+  `--allow-single-shell` fits such data for orientation information only;
+  propagator-derived scalars are then not computed. Underdetermined fits
+  without L1 regularization are flagged.
+- New QC columns: `fixel_chain_length`, the FA-weighted mean length of
+  fiber chains formed by the principal directions, and `gradient_table_ratio`,
+  which checks the 24 axis permutations and flips of the gradient table. A
+  permuted or flipped table is reported by name.
+- The QC data dictionary uses only BIDS-defined keys; the corresponding
+  DSI Studio column is named in each description instead of a `Replaces` key.
+
 ## 0.1.0
 
 First release.

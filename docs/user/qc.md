@@ -98,6 +98,36 @@ along that lattice step lies within 15° of its own. The index is the FA-weighte
 fraction of evaluated voxels that are connected, between 0 and 1. It is computed
 with the primary-coherence method of the ODX library.
 
+Because it compares each direction only with its immediate neighbors, the index
+is insensitive to a gradient table whose axes are permuted or flipped: such an
+error rotates the whole direction field consistently, and a smooth field stays
+smooth.
+
+## Fiber chain length
+
+The same principal directions are linked into chains. Each evaluated direction
+looks forward and backward into the neighboring voxels and links to the
+direction there (within 15°) that best continues it; a link is kept only when
+it is mutual, so the directions fall into simple chains. `fixel_chain_length` is
+the FA-weighted mean length of the chain each voxel belongs to, in millimeters.
+A single inconsistent step ends a chain, so noise, misregistration and a wrong
+gradient table shorten chains more than they lower the coherence index. Chain
+lengths are much shorter than tractography streamlines and are meant for
+comparison between scans.
+
+## Gradient-table check
+
+The chain lengths are recomputed for each of the 24 permutations and sign flips
+of the gradient-table axes, using the voxels in the top 10% of FA, whose
+directions are most reliable. `gradient_table_ratio` is the longest of these
+over the length obtained with the table as used. It is 1 when the table as used
+gives the most coherent field. A larger value means that another permutation or
+flip of the bvecs is more consistent with the anatomy; the report then names
+that candidate, for example `012fx` (x negated), in the axes of the
+RAS+-reoriented grid. In tests on 16 preprocessed series, the table as used was
+the most coherent in every case, and a deliberately flipped or swapped axis was
+identified in every case, with ratios of 1.16 to 1.80.
+
 ## Header and gradient-table summaries
 
 The table also records the image dimensions, voxel size, maximum $b$-value and
@@ -119,12 +149,14 @@ The fitting tools (`cs-fit`, `cs-dti`, `cs-response`, `cs-ss3t`,
 fitting, and print a warning when NDC is below 0.4 or the contrast ratio is
 below 1.1.
 
-## Relation to the columns previously reported by qsiprep
+## Relation to DSI Studio's measures
 
-qsiprep's image-quality table was previously produced with DSI Studio. Metrics
-whose definition differs here carry new names:
+qsiprep also reports DSI Studio's image-quality measures. Where a cs_dmri metric
+measures the same property with a different computation, it carries a
+different name, and its description in the data dictionary names the DSI Studio
+column:
 
-| Column | Previous column |
+| Column | DSI Studio column |
 |---|---|
 | `dimension_{x,y,z}`, `voxel_size_{x,y,z}`, `max_b` | unchanged |
 | `n_dwi_volumes`, `n_b0_volumes` | `num_directions` |
@@ -132,6 +164,4 @@ whose definition differs here carry new names:
 | `dwi_contrast_ratio`, `dwi_contrast_ratio_masked` | `dwi_contrast` |
 | `n_outlier_slices` | `num_bad_slices` |
 | `fixel_coherence` | `coherence_index` |
-
-The data dictionary records the previous name of each renamed column in a
-`Replaces` field.
+| `fixel_chain_length`, `gradient_table_ratio` | none |

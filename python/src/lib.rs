@@ -218,7 +218,7 @@ fn qc_outlier_slices<'py>(
 }
 
 #[pyfunction]
-#[pyo3(signature = (principal_dir, fa, mask, affine, *, world_directions=false, quantile=0.1, angle_degrees=15.0, n_threads=None))]
+#[pyo3(signature = (principal_dir, fa, mask, affine, *, world_directions=false, quantile=0.1, angle_degrees=15.0, check_gradient_table=true, gradient_table_quantile=0.9, n_threads=None))]
 #[allow(clippy::too_many_arguments)]
 fn qc_fixel_coherence<'py>(
     py: Python<'py>,
@@ -229,19 +229,24 @@ fn qc_fixel_coherence<'py>(
     world_directions: bool,
     quantile: f32,
     angle_degrees: f32,
+    check_gradient_table: bool,
+    gradient_table_quantile: f32,
     n_threads: Option<usize>,
 ) -> PyResult<Bound<'py, PyDict>> {
     use cs_dmri::qc::{CoherenceOptions, fixel_coherence};
     let aff = affine_from(affine)?;
-    let opts = CoherenceOptions { quantile, angle_degrees };
+    let opts = CoherenceOptions { quantile, angle_degrees, check_gradient_table, gradient_table_quantile };
     let (pd, f, m) = (principal_dir.as_array(), fa.as_array(), mask.as_array());
     let r = run(py, n_threads, || fixel_coherence(pd, f, m, aff, world_directions, &opts))?
         .map_err(map_err)?;
-    to_py_dict(py, &r)
+    let d = to_py_dict(py, &r)?;
+    d.set_item("warnings", r.warnings())?;
+    d.set_item("gradient_table_ratio", r.gradient_table.as_ref().and_then(|g| g.ratio()))?;
+    Ok(d)
 }
 
 /// The QC table's columns: list of dicts with `name`, `LongName`,
-/// `Description`, and `Units` / `Replaces` where applicable.
+/// `Description`, and `Units` where applicable.
 #[pyfunction]
 fn qc_columns(py: Python<'_>) -> PyResult<Vec<Bound<'_, PyDict>>> {
     cs_dmri::qc::qc_columns().iter().map(|c| to_py_dict(py, c)).collect()

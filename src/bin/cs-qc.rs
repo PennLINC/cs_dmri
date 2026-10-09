@@ -119,12 +119,16 @@ fn main() -> Result<()> {
         )?)
     };
 
-    let row = report.row(Some(voxel_size(&affine)), coherence.as_ref().and_then(|c| c.coherence));
-    let warnings = report.warnings();
+    let row = report.row(Some(voxel_size(&affine)), coherence.as_ref());
+    let mut warnings = report.warnings();
+    if let Some(c) = &coherence {
+        warnings.extend(c.warnings());
+    }
     if !args.quiet {
         let f = |v: Option<f64>| v.map_or("n/a".into(), |v| format!("{v:.4}"));
         eprintln!(
-            "[cs-qc] NDC {} (masked {}), DWI contrast ratio {} (masked {}{}), outlier slices {}, fixel coherence {}",
+            "[cs-qc] NDC {} (masked {}), DWI contrast ratio {} (masked {}{}), outlier slices {}, fixel coherence {}, \
+             chain length {} mm, gradient-table ratio {}",
             f(report.ndc),
             f(report.ndc_masked),
             f(report.dwi_contrast_ratio),
@@ -132,6 +136,8 @@ fn main() -> Result<()> {
             report.dwi_contrast_ratio_masked.map_or(String::new(), |v| format!(", {}", contrast_grade(v))),
             report.n_outlier_slices(),
             f(coherence.as_ref().and_then(|c| c.coherence)),
+            f(coherence.as_ref().and_then(|c| c.chain_length_mm)),
+            f(coherence.as_ref().and_then(|c| c.gradient_table.as_ref()).and_then(|g| g.ratio())),
         );
     }
     for w in &warnings {
