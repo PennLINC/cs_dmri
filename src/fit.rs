@@ -609,6 +609,26 @@ pub enum ShoreRegularization {
     AmpNonNeg { icls: IclsConfig },
 }
 
+/// 3D-SHORE needs diffusion-weighted data on at least this many b-value
+/// shells: with fewer, the radial decay of the signal is not determined by the
+/// data.
+pub const MIN_SHORE_SHELLS: usize = 2;
+
+/// b-values closer than this (s/mm²) belong to the same shell.
+pub const SHELL_TOLERANCE: f64 = 50.0;
+
+/// Mean b-values of the non-zero shells of `gtab`, ascending.
+pub fn dwi_shells(gtab: &crate::qspace::GradientTable) -> Vec<f64> {
+    gtab.shells(SHELL_TOLERANCE).into_iter().filter(|s| s.b > 0.0).map(|s| s.b).collect()
+}
+
+fn describe_shells(shells: &[f64]) -> String {
+    match shells {
+        [b] => format!("a single shell (b = {b:.0} s/mm²)"),
+        _ => format!("{} shells", shells.len()),
+    }
+}
+
 /// Everything [`fit_shore`] needs besides the data.
 #[derive(Debug, Clone)]
 pub struct ShoreFitSpec {
@@ -619,6 +639,9 @@ pub struct ShoreFitSpec {
     pub lambda_n: f64,
     pub lambda_l: f64,
     pub compute_diagnostics: bool,
+    /// Fit data with fewer than [`MIN_SHORE_SHELLS`] shells instead of
+    /// refusing. Only the orientation information of such a fit is meaningful.
+    pub allow_single_shell: bool,
 }
 
 impl Default for ShoreFitSpec {
@@ -640,6 +663,7 @@ impl Default for ShoreFitSpec {
             lambda_n: 1e-8,
             lambda_l: 1e-8,
             compute_diagnostics: false,
+            allow_single_shell: false,
         }
     }
 }
@@ -652,6 +676,10 @@ pub struct ShoreFitOutput {
     pub solver: SolverMetadata,
     /// `(median, p10, p90)` of the per-voxel α, for per-voxel α strategies.
     pub alpha_distribution: Option<(f64, f64, f64)>,
+    /// Mean b-values of the non-zero shells the fit used.
+    pub dwi_shells: Vec<f64>,
+    /// Conditions that limit what the fit can be used for.
+    pub warnings: Vec<String>,
 }
 
 /// Fit a SHORE basis to every masked voxel of `dwi` with the solver `spec`
@@ -660,7 +688,46 @@ pub fn fit_shore<F>(dwi: &DwiData, spec: &ShoreFitSpec, on_voxel: F) -> Result<S
 where
     F: Fn() + Sync,
 {
+    let dwi_shells = dwi_shells(&dwi.gtab);
+    let mut warnings = Vec::new();
+    if dwi_shells.is_empty() {
+        return Err(CsDmriError::Fit(
+            "3D-SHORE needs diffusion-weighted data; every volume is at or below the b=0 threshold"
+                .to_string(),
+        ));
+    }
+    if dwi_shells.len() < MIN_SHORE_SHELLS {
+        let what = describe_shells(&dwi_shells);
+        if !spec.allow_single_shell {
+            return Err(CsDmriError::Fit(format!(
+                "3D-SHORE needs diffusion-weighted data on at least {MIN_SHORE_SHELLS} b-value shells; \
+                 this series has {what}. With a single shell the radial decay of the signal is not \
+                 determined by the data: a fit would match the measurements, but its \
+                 propagator-derived scalars (RTOP, RTAP, RTPP, MSD, QIV) and the signals it predicts \
+                 at other b-values would reflect the regularization rather than the data. For \
+                 single-shell data use single-shell three-tissue CSD (cs-ss3t-full, \
+                 cs_dmri.ss3t_pipeline). To fit anyway for orientation information only, allow \
+                 single-shell data (--allow-single-shell, or allow_single_shell=True in Python)."
+            )));
+        }
+        warnings.push(format!(
+            "the data have {what}: only the orientation information of this fit is meaningful, \
+             and propagator-derived scalars are not computed"
+        ));
+    }
     let basis = ShoreBasis::new(spec.radial_order, spec.zeta);
+    if dwi.gtab.n_grads() < basis.n_coeffs()
+        && !matches!(spec.regularization, ShoreRegularization::L1 { .. })
+    {
+        warnings.push(format!(
+            "{} measurements for {} coefficients (radial order {}): without L1 regularization the \
+             fit is underdetermined and its fit statistics are not meaningful; use a lower radial \
+             order or L1",
+            dwi.gtab.n_grads(),
+            basis.n_coeffs(),
+            spec.radial_order
+        ));
+    }
     let design = basis.design_matrix(&dwi.gtab);
     let regularization = basis.regularization();
     let cfg = FitConfig {
@@ -732,6 +799,8 @@ where
         result,
         solver,
         alpha_distribution,
+        dwi_shells,
+        warnings,
     })
 }
 
@@ -771,4 +840,81 @@ pub fn mean_in_mask(arr: &ndarray::Array3<f32>, mask: &ndarray::Array3<bool>) ->
         .filter(|(_, m)| **m)
         .fold((0.0_f64, 0_usize), |(s, c), (v, _)| (s + *v as f64, c + 1));
     if count == 0 { 0.0 } else { sum / count as f64 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::qspace::{BvecFrame, GradientTable};
+    use ndarray::{Array3, Array4};
+
+    /// A 2×2×1 series of an isotropic decay, on the given non-zero shells,
+    /// with 40 directions per shell and two b=0 volumes.
+    fn series(shells: &[f64]) -> DwiData {
+        let mut bvals = vec![0.0, 0.0];
+        let mut bvecs = vec![[0.0, 0.0, 1.0]; 2];
+        for &b in shells {
+            for i in 0..40 {
+                let z = 1.0 - 2.0 * (i as f64 + 0.5) / 40.0;
+                let r = (1.0 - z * z).sqrt();
+                let phi = 2.399_963 * i as f64;
+                bvals.push(b);
+                bvecs.push([r * phi.cos(), r * phi.sin(), z]);
+            }
+        }
+        let n = bvals.len();
+        let signal: Vec<f32> = bvals.iter().map(|b| (-b * 0.0008_f64).exp() as f32).collect();
+        let data = Array4::from_shape_fn((2, 2, 1, n), |(_, _, _, k)| signal[k]);
+        let gtab = GradientTable::new(bvals, bvecs, Some(0.04), Some(0.01), None).unwrap();
+        DwiData::from_table(data, Array3::from_elem((2, 2, 1), true), gtab, BvecFrame::ImageAxis, "x.nii".into())
+    }
+
+    fn l2_spec(allow_single_shell: bool) -> ShoreFitSpec {
+        ShoreFitSpec {
+            regularization: ShoreRegularization::L2,
+            allow_single_shell,
+            ..ShoreFitSpec::default()
+        }
+    }
+
+    #[test]
+    fn single_shell_data_are_refused_by_default() {
+        let err = fit_shore(&series(&[1000.0]), &l2_spec(false), || {}).err().expect("refused");
+        let msg = err.to_string();
+        assert!(msg.contains("at least 2 b-value shells"), "{msg}");
+        assert!(msg.contains("b = 1000"), "{msg}");
+        assert!(msg.contains("allow_single_shell"), "{msg}");
+    }
+
+    #[test]
+    fn single_shell_data_fit_when_allowed_with_a_warning() {
+        let out = fit_shore(&series(&[1000.0]), &l2_spec(true), || {}).unwrap();
+        assert_eq!(out.dwi_shells.len(), 1);
+        assert!(out.warnings.iter().any(|w| w.contains("only the orientation information")));
+    }
+
+    #[test]
+    fn two_shells_fit_without_warnings() {
+        let out = fit_shore(&series(&[1000.0, 2000.0]), &l2_spec(false), || {}).unwrap();
+        assert_eq!(out.dwi_shells.len(), 2);
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    }
+
+    #[test]
+    fn data_without_diffusion_weighting_are_refused_even_when_allowed() {
+        assert!(fit_shore(&series(&[]), &l2_spec(true), || {}).is_err());
+    }
+
+    #[test]
+    fn underdetermined_l2_fits_are_flagged() {
+        let mut dwi = series(&[1000.0, 2000.0]);
+        let keep: Vec<usize> = (0..dwi.gtab.n_grads()).step_by(3).collect();
+        let bvals = keep.iter().map(|&i| dwi.gtab.bvals[i]).collect();
+        let bvecs = keep.iter().map(|&i| dwi.gtab.bvecs[i]).collect();
+        let gtab = GradientTable::new(bvals, bvecs, Some(0.04), Some(0.01), None).unwrap();
+        let data = dwi.data.select(ndarray::Axis(3), &keep);
+        dwi = DwiData::from_table(data, dwi.mask.clone(), gtab, BvecFrame::ImageAxis, "x.nii".into());
+        let out = fit_shore(&dwi, &l2_spec(false), || {}).unwrap();
+        assert!(out.warnings.iter().any(|w| w.contains("underdetermined")), "{:?}", out.warnings);
+    }
 }

@@ -5,6 +5,7 @@ regularization, and everything derived from the coefficients."""
 from __future__ import annotations
 
 import json
+import warnings
 from os import PathLike
 from pathlib import Path
 
@@ -46,6 +47,12 @@ class ShoreModel:
     bvec_frame : {"auto", "world", "image"}
         Frame of the fit and of the SH coefficients. ``"auto"`` uses world RAS
         when an affine is known and the image's voxel axes otherwise.
+    allow_single_shell : bool
+        3D-SHORE needs at least two non-zero b-value shells, and :meth:`fit`
+        raises ``ValueError`` on fewer. With ``True`` single-shell data are fit
+        anyway; only the orientation information of such a fit is meaningful,
+        and propagator-derived scalars are not available. Single-shell data are
+        better served by :class:`~cs_dmri.multitissue.SS3TModel`.
     """
 
     def __init__(self, gtab, *, radial_order: int = 6, zeta: float = 700.0, regularization: str = "l1",
@@ -53,7 +60,8 @@ class ShoreModel:
                  path_n_alphas: int = 20, path_eps: float | None = None, slack: float = 0.05,
                  max_iter: int = 1000, tol: float = 1e-6, non_negative: bool = False,
                  lambda_n: float = 1e-8, lambda_l: float = 1e-8, nonneg_max_iter: int = 200,
-                 nonneg_tol: float = 1e-9, nonneg_epsilon: float = 1e-10, bvec_frame: str = "auto"):
+                 nonneg_tol: float = 1e-9, nonneg_epsilon: float = 1e-10, bvec_frame: str = "auto",
+                 allow_single_shell: bool = False):
         if regularization not in _REGULARIZATIONS:
             raise ValueError(f"regularization must be one of {_REGULARIZATIONS}, got {regularization!r}")
         if alpha_mode not in _ALPHA_MODES:
@@ -67,7 +75,7 @@ class ShoreModel:
             alpha_mode=alpha_mode, alpha=alpha, alpha_ratio=alpha_ratio, path_n_alphas=path_n_alphas,
             path_eps=path_eps, slack=slack, max_iter=max_iter, tol=tol, non_negative=non_negative,
             lambda_n=lambda_n, lambda_l=lambda_l, nonneg_max_iter=nonneg_max_iter, nonneg_tol=nonneg_tol,
-            nonneg_epsilon=nonneg_epsilon)
+            nonneg_epsilon=nonneg_epsilon, allow_single_shell=allow_single_shell)
 
     def fit(self, data, mask=None, *, affine=None, diagnostics: bool = True,
             n_threads: int | None = None) -> "ShoreFit":
@@ -82,6 +90,8 @@ class ShoreModel:
             bvec_frame="world-ras" if frame == "world" else "image-axis",
             radial_order=self.radial_order, zeta=self.zeta, regularization=self.regularization,
             diagnostics=diagnostics, n_threads=n_threads, **self._solver)
+        for message in out.pop("warnings", ()):
+            warnings.warn(message, stacklevel=2)
         return ShoreFit(out, model=self, mask=m, affine=affine, frame=frame, rotation=R, dwi=dwi)
 
 
@@ -120,6 +130,19 @@ class ShoreFit:
         self.zeta = float(basis["zeta"])
 
     @property
+    def dwi_shells(self) -> list[float] | None:
+        """Mean b-values of the non-zero shells the fit used (``None`` for fits
+        saved before this was recorded)."""
+        shells = self.sidecar.get("dwi_shells")
+        return None if shells is None else [float(b) for b in shells]
+
+    @property
+    def single_shell(self) -> bool:
+        """True when the fit used one non-zero shell, so that only its
+        orientation information is meaningful."""
+        return self.dwi_shells is not None and len(self.dwi_shells) < 2
+
+    @property
     def sparsity(self) -> np.ndarray:
         """Fraction of nonzero coefficients per voxel (L1 sparsity)."""
         out = np.zeros(self.coefficients.shape[:3], np.float32)
@@ -144,6 +167,13 @@ class ShoreFit:
                 raise ValueError("pass a gradient table: this fit has no model")
             gtab = self.model.gtab
         gtab = as_gradient_table(gtab)
+        if self.single_shell:
+            fitted = self.dwi_shells[0]
+            dw = gtab.bvals[gtab.bvals > gtab.b0_threshold]
+            if np.any(np.abs(dw - fitted) > 50):
+                warnings.warn(
+                    f"this fit used a single shell (b = {fitted:.0f}); signals at other b-values are "
+                    "extrapolated by the regularization, not the measurements", stacklevel=2)
         out = _cs_dmri.shore_predict(
             self.coefficients, self.radial_order, self.zeta, gtab.bvals, rotate(gtab.bvecs, self._rotation),
             big_delta=self.sidecar["big_delta_seconds"], small_delta=self.sidecar["small_delta_seconds"],
@@ -158,7 +188,14 @@ class ShoreFit:
         in the image's voxel-axis frame, or by default the RESTORE principal
         direction of the DWI this was fit on. Without either they are NaN.
         ``units="um"`` follows TORTOISE (q in 1/µm); ``"mm"`` follows dipy.
+
+        Raises ``ValueError`` for a single-shell fit, whose radial decay is not
+        determined by the data.
         """
+        if self.single_shell:
+            raise ValueError(
+                "propagator-derived scalars are not determined by single-shell data "
+                f"(this fit used b = {self.dwi_shells[0]:.0f} only)")
         if directions is None and self._dwi is not None:
             directions = self._dwi.tensor.principal_dir
         if directions is not None:
@@ -180,8 +217,12 @@ class ShoreFit:
         Directory outputs (``"odx-directory"``, ``"mrtrix-fixel-dir"``) must be
         named explicitly. ``fixel_container`` (``"nifti"`` or ``"mif"``) sets
         the image format inside an MRtrix3 fixel directory. Formats other than
-        ODX keep the subset of the data they can represent.
+        ODX keep the subset of the data they can represent. Microstructure
+        scalars are left out for a single-shell fit.
         """
+        if microstructure and self.single_shell:
+            warnings.warn("single-shell fit: propagator-derived scalars are not written", stacklevel=2)
+            microstructure = False
         if self.affine is None:
             raise ValueError("exporting needs an affine")
         if self.frame != "world":

@@ -14,6 +14,31 @@ The basis definition and ordering follow the BrainSuite convention used by
 qsirecon. The default radial order is 6 (72 coefficients) and the default
 $\zeta$ is 700.
 
+## Acquisition requirements
+
+3D-SHORE models the signal as a function of both direction and q-space radius,
+so the data must sample at least two non-zero b-values (shells). b-values within
+50 s/mm² of each other count as one shell. With a single shell the radial decay
+of the signal is not determined by the data. A fit then still matches the
+measurements, often with a higher $R^2$ than a fit to multi-shell data, but the
+propagator-derived scalars and the signal predicted at other b-values are
+determined by the regularization and $\zeta$ rather than by the data. In a
+comparison on one multi-shell acquisition, fits to a single shell of the same
+data gave about half the mean squared displacement of the full fit, and a
+return-to-origin variance unrelated to it, while their ODFs remained similar.
+
+Fitting therefore stops with an error on single-shell data. Single-shell data
+are better analyzed with {doc}`single-shell three-tissue CSD <multitissue>`.
+To fit them anyway for their orientation information (`allow_single_shell=True`
+in Python, `--allow-single-shell` on the command line), the fit records its
+shells in the coefficient sidecar. Propagator-derived scalars are then not
+computed, by {meth}`~cs_dmri.shore.ShoreFit.microstructure`, by `cs-odf` or in
+exports, and predictions at other b-values come with a warning.
+
+A fit is also flagged when the series has fewer measurements than the basis
+has coefficients and the estimator is not L1. Such a fit is underdetermined,
+and its fit statistics are not meaningful.
+
 ## Fitting
 
 With design matrix $M$ (rows: measurements; columns: basis functions), signal

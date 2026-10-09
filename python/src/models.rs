@@ -72,7 +72,7 @@ pub fn affine_rotation<'py>(py: Python<'py>, affine: PyReadonlyArray2<'py, f64>)
     bvec_frame="image-axis", radial_order=6, zeta=700.0, regularization="l1", alpha_mode="l2-anchored",
     alpha=1.0, alpha_ratio=1e-3, path_n_alphas=20, path_eps=None, slack=0.05, max_iter=1000, tol=1e-6,
     non_negative=false, lambda_n=1e-8, lambda_l=1e-8, nonneg_max_iter=200, nonneg_tol=1e-9,
-    nonneg_epsilon=1e-10, diagnostics=false, n_threads=None))]
+    nonneg_epsilon=1e-10, diagnostics=false, allow_single_shell=false, n_threads=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn shore_fit<'py>(
     py: Python<'py>,
@@ -102,6 +102,7 @@ pub fn shore_fit<'py>(
     nonneg_tol: f64,
     nonneg_epsilon: f64,
     diagnostics: bool,
+    allow_single_shell: bool,
     n_threads: Option<usize>,
 ) -> PyResult<Bound<'py, PyDict>> {
     use cs_dmri::fit::{AlphaMode, ShoreFitSpec, ShoreRegularization, build_alpha_strategy, fit_shore};
@@ -154,6 +155,7 @@ pub fn shore_fit<'py>(
         lambda_n,
         lambda_l,
         compute_diagnostics: diagnostics,
+        allow_single_shell,
     };
     let out = run(py, n_threads, || fit_shore(&dwi, &spec, || {}))?.map_err(map_err)?;
 
@@ -167,10 +169,12 @@ pub fn shore_fit<'py>(
         solver: out.solver.clone(),
         n_coefficients: out.basis.n_coeffs(),
         bvec_frame: frame,
+        dwi_shells: Some(out.dwi_shells.clone()),
         provenance: None,
     };
     let d = PyDict::new_bound(py);
     put(&d, "coefficients", out.result.coefficients)?;
+    d.set_item("warnings", out.warnings.clone())?;
     d.set_item("sidecar", to_py_dict(py, &sidecar)?)?;
     d.set_item("alpha_distribution", out.alpha_distribution)?;
     if let Some(diag) = out.result.diagnostics {

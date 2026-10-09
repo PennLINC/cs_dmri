@@ -38,10 +38,23 @@ pub struct SidecarMetadata {
     /// Older sidecars predate this field and are assumed to be image-axis.
     #[serde(default = "default_bvec_frame")]
     pub bvec_frame: BvecFrame,
+    /// Mean b-values (s/mm²) of the non-zero shells the fit used. Older
+    /// sidecars predate this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dwi_shells: Option<Vec<f64>>,
     /// Reproducibility provenance. Optional — older sidecars predate this
     /// field, and `--provenance none` skips it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
+}
+
+impl SidecarMetadata {
+    /// True when the fit used fewer than [`crate::fit::MIN_SHORE_SHELLS`]
+    /// shells, so its propagator-derived scalars are not meaningful. False
+    /// for sidecars that do not record the shells.
+    pub fn is_single_shell(&self) -> bool {
+        matches!(&self.dwi_shells, Some(s) if s.len() < crate::fit::MIN_SHORE_SHELLS)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

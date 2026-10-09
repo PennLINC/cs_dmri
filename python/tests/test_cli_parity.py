@@ -76,8 +76,11 @@ def test_qc_matches_cs_qc(pnc, tmp_path):
 
 
 def test_shore_l2_matches_cs_fit(pnc, tmp_path):
+    # PNC is single-shell; this only checks that the two interfaces agree.
     out = tmp_path / "coef.nii.gz"
-    run(BIN / "cs-fit", *common(tmp_path), "--output", out, "--reg", "l2", "--diagnostics")
-    fit = cs.ShoreModel(pnc.gtab, regularization="l2").fit(pnc)
+    run(BIN / "cs-fit", *common(tmp_path), "--output", out, "--reg", "l2", "--diagnostics",
+        "--allow-single-shell")
+    with pytest.warns(UserWarning):
+        fit = cs.ShoreModel(pnc.gtab, regularization="l2", allow_single_shell=True).fit(pnc)
     np.testing.assert_array_equal(fit.coefficients[pnc.mask], load(out)[pnc.mask])
     np.testing.assert_array_equal(fit.r2[pnc.mask], load(tmp_path / "coef_r2.nii.gz")[pnc.mask])

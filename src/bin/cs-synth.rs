@@ -82,6 +82,12 @@ fn main() -> Result<()> {
     }
     let coeffs = CoefficientsFile::read(&args.coeffs)
         .with_context(|| format!("read {:?}", args.coeffs))?;
+    if coeffs.metadata.is_single_shell() {
+        eprintln!(
+            "[cs-synth] warning: the coefficients come from single-shell data; signals at b-values \
+             other than that shell are extrapolated by the regularization, not the measurements"
+        );
+    }
 
     let bvals = parse_bvals(&fs::read_to_string(&args.bval)?)?;
     let mut bvecs = parse_bvecs(&fs::read_to_string(&args.bvec)?)?;

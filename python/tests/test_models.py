@@ -252,3 +252,45 @@ def test_pam5_export_loads_in_dipy(tmp_path):
     b_dipy = shm.real_sh_descoteaux(8, theta, phi)[0]  # dipy's default basis
     mrtrix = np.asarray(nib.load(tmp_path / "wm.nii.gz").dataobj)[2, 2, 2]
     np.testing.assert_allclose(b_dipy @ pam.shm_coeff[2, 2, 2], b_tournier @ mrtrix, atol=1e-5)
+
+
+# ------------------------------------------------------- single-shell guard
+
+
+def _single_shell(series):
+    data, bvals, bvecs, affine = series
+    keep = bvals != 2500
+    return data[..., keep], bvals[keep], bvecs[keep], affine
+
+
+def test_shore_refuses_single_shell_data():
+    data, bvals, bvecs, affine = _single_shell(multishell_series())
+    dwi = cs.DWI(data, (bvals, bvecs), affine=affine, mask=np.ones(data.shape[:3], bool))
+    with pytest.raises(ValueError, match="at least 2 b-value shells"):
+        cs.ShoreModel(dwi.gtab, regularization="l2").fit(dwi)
+
+
+def test_single_shell_fit_keeps_orientation_only(tmp_path):
+    data, bvals, bvecs, affine = _single_shell(multishell_series())
+    dwi = cs.DWI(data, (bvals, bvecs), affine=affine, mask=np.ones(data.shape[:3], bool))
+    with pytest.warns(UserWarning, match="only the orientation information"):
+        fit = cs.ShoreModel(dwi.gtab, regularization="l2", allow_single_shell=True).fit(dwi)
+    assert fit.single_shell and fit.dwi_shells == [pytest.approx(1000.0)]
+    assert fit.odf_sh().shape[-1] > 1
+    with pytest.raises(ValueError, match="single-shell"):
+        fit.microstructure()
+    with pytest.warns(UserWarning, match="extrapolated"):
+        fit.predict(cs.GradientTable(np.array([0.0, 2000.0]), np.array([[0, 0, 1.0], [1.0, 0, 0]])))
+    with pytest.warns(UserWarning, match="not written"):
+        fit.export(tmp_path / "fit.odx")
+    # The record survives a save/load round trip.
+    fit.save(tmp_path / "coef.nii.gz")
+    assert cs.ShoreFit.load(tmp_path / "coef.nii.gz").single_shell
+
+
+def test_multishell_fit_is_not_single_shell():
+    data, bvals, bvecs, affine = multishell_series()
+    dwi = cs.DWI(data, (bvals, bvecs), affine=affine, mask=np.ones(data.shape[:3], bool))
+    fit = cs.ShoreModel(dwi.gtab).fit(dwi)
+    assert not fit.single_shell
+    assert "rtop" in fit.microstructure()

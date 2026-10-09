@@ -148,6 +148,14 @@ struct Cli {
     #[arg(long)]
     diagnostics: bool,
 
+    /// Fit data with a single non-zero b-value shell instead of stopping with
+    /// an error. The radial decay of the signal is then not determined by the
+    /// data, so only the orientation information of the fit is meaningful, and
+    /// propagator-derived scalars are not written. Single-shell data are better
+    /// served by cs-ss3t-full.
+    #[arg(long)]
+    allow_single_shell: bool,
+
     /// Fit with b-vectors in the image-axis (FSL) frame. By default b-vectors
     /// are rotated into world (RAS) coordinates before fitting.
     #[arg(long)]
@@ -271,11 +279,16 @@ fn main() -> Result<()> {
         lambda_n: args.lambda_n,
         lambda_l: args.lambda_l,
         compute_diagnostics: args.diagnostics,
+        allow_single_shell: args.allow_single_shell,
     };
 
     let interval = Duration::from_secs(args.progress_interval_secs.max(1));
     let heartbeat = Heartbeat::new("cs-fit", mask_voxels, interval, args.quiet);
     let fit = fit_shore(&dwi, &spec, || heartbeat.tick())?;
+    for warning in &fit.warnings {
+        eprintln!("[cs-fit] warning: {warning}");
+    }
+    let dwi_shells = fit.dwi_shells.clone();
     if !args.quiet && matches!(args.reg, Regularization::L1) {
         match (fit.alpha_distribution, &fit.solver) {
             (Some((m, p10, p90)), _) => eprintln!(
@@ -315,6 +328,7 @@ fn main() -> Result<()> {
         solver: solver_meta,
         n_coefficients: basis.n_coeffs(),
         bvec_frame: dwi.bvec_frame,
+        dwi_shells: Some(dwi_shells),
         provenance,
     };
 
@@ -406,6 +420,7 @@ fn main() -> Result<()> {
             &dwi.mask,
             &basis,
             &diag_dpvs,
+            !coeffs_file.metadata.is_single_shell(),
             args.overwrite,
             args.quiet,
             args.progress_interval_secs,
@@ -431,6 +446,7 @@ fn write_odx_from_fit(
     raw_mask: &ndarray::Array3<bool>,
     basis: &cs_dmri::ShoreBasis,
     raw_diag_dpvs: &[(&'static str, ndarray::Array3<f32>)],
+    microstructure: bool,
     overwrite: bool,
     quiet: bool,
     progress_interval_secs: u64,
@@ -454,7 +470,8 @@ fn write_odx_from_fit(
             quiet,
             ..ShoreOdxOptions::default()
         },
-        microstructure: Some(MicrostructureOptions { quiet, ..MicrostructureOptions::default() }),
+        microstructure: microstructure
+            .then(|| MicrostructureOptions { quiet, ..MicrostructureOptions::default() }),
     };
     let out = shore_coeffs_to_odx(raw_coeffs, raw_affine, Some(raw_mask), basis, &dpv_refs, &opts)?;
     finalize_and_write_odx(out.build.builder, odx_path, overwrite, directory)

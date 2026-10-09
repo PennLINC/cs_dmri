@@ -129,6 +129,9 @@ Options:
       --diagnostics
           Also write per-voxel maps of R², residual, iteration count and regularization type, and, for L1 fits with per-voxel α selection, the selected α, next to the coefficient NIfTI
 
+      --allow-single-shell
+          Fit data with a single non-zero b-value shell instead of stopping with an error. The radial decay of the signal is then not determined by the data, so only the orientation information of the fit is meaningful, and propagator-derived scalars are not written. Single-shell data are better served by cs-ss3t-full
+
       --no-bvec-rotation
           Fit with b-vectors in the image-axis (FSL) frame. By default b-vectors are rotated into world (RAS) coordinates before fitting
 

@@ -221,6 +221,12 @@ fn main() -> Result<()> {
 
     let microstructure = if args.no_microstructure {
         None
+    } else if meta.is_single_shell() {
+        eprintln!(
+            "[cs-odf] warning: the coefficients come from single-shell data; propagator-derived \
+             scalars (RTOP, RTAP, RTPP, MSD, QIV) are not determined by such data and are not written"
+        );
+        None
     } else {
         if args.no_peaks && !args.quiet {
             eprintln!(
