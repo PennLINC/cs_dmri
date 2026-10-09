@@ -7,13 +7,19 @@ members = [".", "python"]
 version = "0.1.0"
 edition = "2021"
 license = "(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause"
+repository = "https://github.com/PennLINC/cs_dmri"
+homepage = "https://github.com/PennLINC/cs_dmri"
+documentation = "https://cs-dmri.readthedocs.io"
 
 [package]
 name = "cs_dmri"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Compressed-sensing reconstruction of diffusion MRI data with the 3D-SHORE basis"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Diffusion MRI quality control, 3D-SHORE compressed-sensing fits, RESTORE tensors and SS3T-CSD"
 publish = false
 
 [lib]

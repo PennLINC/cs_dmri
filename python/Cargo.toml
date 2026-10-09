@@ -3,6 +3,9 @@ name = "cs_dmri_py"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 description = "Python bindings for cs_dmri (built with maturin; not published as a Rust crate)"
 publish = false
 

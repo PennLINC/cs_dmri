@@ -32,6 +32,12 @@ classifiers = [
 ]
 dependencies = ["numpy>=1.24", "nibabel>=5"]
 
+[project.urls]
+Homepage = "https://github.com/PennLINC/cs_dmri"
+Documentation = "https://cs-dmri.readthedocs.io"
+Source = "https://github.com/PennLINC/cs_dmri"
+Issues = "https://github.com/PennLINC/cs_dmri/issues"
+
 [project.optional-dependencies]
 dipy = ["dipy>=1.10"]
 test = ["pytest"]
