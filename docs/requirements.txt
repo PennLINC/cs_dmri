@@ -1,0 +1,5 @@
+sphinx>=7
+myst-parser>=2
+sphinx-rtd-theme>=2
+numpy>=1.24
+nibabel>=5

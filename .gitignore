@@ -33,3 +33,4 @@ python/cs_dmri/_cs_dmri*.pyd
 python/.venv/
 __pycache__/
 *.egg-info/
+docs/_build/

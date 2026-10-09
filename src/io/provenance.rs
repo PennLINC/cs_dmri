@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Reproducibility provenance written into sidecars / ODX extras.
 //!
-//! `cs_dmri` is used on clinical / research neuroimaging data, so the default
-//! mode (`Minimal`) avoids capturing anything that could carry PHI surface:
-//! no `argv` (subject IDs typically appear in input paths), no hostname, no
-//! wall-clock start time. Compile-time facts (version, git SHA, build
-//! timestamp) plus runtime summaries (threads, duration) only.
-//!
-//! Use `Full` only on datasets where the input paths and host metadata are
-//! safe to retain.
+//! The default mode (`Minimal`) records compile-time facts (version, git SHA,
+//! build timestamp) and run-time summaries (threads, duration) only. It omits
+//! the command line, whose input paths often contain subject identifiers, the
+//! host name and the start time; `Full` adds them.
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -21,13 +17,11 @@ use crate::{BUILD_TIMESTAMP, GIT_SHA, VERSION};
 #[serde(rename_all = "lowercase")]
 #[value(rename_all = "lower")]
 pub enum ProvenanceMode {
-    /// Build-time + runtime-summary only. Default. Safe for PHI-bearing
-    /// datasets — emits no argv, hostname, or wall-clock start time.
+    /// Version, build and run-time summary only. Default.
     Minimal,
-    /// Adds argv, hostname, and start time. Opt-in only when the dataset's
-    /// file paths and host info are safe to retain alongside the output.
+    /// Additionally records the command line, host name and start time.
     Full,
-    /// Skip the provenance block entirely.
+    /// No provenance.
     None,
 }
 

@@ -20,53 +20,54 @@ use nifti::writer::WriterOptions;
 use odx_rs::reference_affine::read_reference_affine;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Synthesize a DWI from cs_dmri coefficients")]
+#[command(version, about = "Synthesise diffusion-weighted images from SHORE coefficients for a given gradient table")]
 struct Cli {
-    /// Coefficients NIfTI written by `cs-fit`. Sidecar JSON is read from the
-    /// matching `.json` next to it.
+    /// Coefficient NIfTI written by `cs-fit`. The JSON sidecar is read from the
+    /// matching `.json` file next to it.
     #[arg(long)]
     coeffs: PathBuf,
-    /// Target FSL bval file.
+    /// FSL bval file of the gradient table to synthesise.
     #[arg(long)]
     bval: PathBuf,
-    /// Target FSL bvec file.
+    /// FSL bvec file of the gradient table to synthesise.
     #[arg(long)]
     bvec: PathBuf,
-    /// Optional override for big delta (seconds). If omitted, the value from
-    /// the coefficients sidecar is used.
+    /// Diffusion time Δ (big delta), in seconds. If omitted, the value in the
+    /// coefficient sidecar is used.
     #[arg(long)]
     big_delta: Option<f64>,
-    /// Optional override for small delta (seconds).
+    /// Gradient pulse duration δ (small delta), in seconds. If omitted, the
+    /// value in the coefficient sidecar is used.
     #[arg(long)]
     small_delta: Option<f64>,
-    /// Maximum gradient amplitude (T/m), used only if deltas need to be
-    /// estimated and the sidecar doesn't have them.
+    /// Maximum gradient amplitude, in T/m. Used only when Δ and δ are absent
+    /// from the sidecar and must be estimated.
     #[arg(long, default_value_t = TORTOISE_DEFAULT_GMAX)]
     gmax: f64,
-    /// Output 4D DWI NIfTI path.
+    /// Output 4D DWI NIfTI.
     #[arg(long)]
     output: PathBuf,
 
-    /// Cap rayon's worker threads. If unset, picks up `$SLURM_CPUS_PER_TASK`,
-    /// then `$RAYON_NUM_THREADS`, else uses one worker per logical CPU.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Allow overwriting an existing output NIfTI and sidecar JSON.
+    /// Overwrite an existing output NIfTI and sidecar JSON. Without this
+    /// flag, existing outputs cause an error.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress periodic progress heartbeat and per-step summary lines.
+    /// Suppress periodic progress and per-step summary messages.
     #[arg(long)]
     quiet: bool,
 
-    /// Seconds between heartbeat lines during synthesis. Default 30.
+    /// Interval between progress messages during synthesis, in seconds.
     #[arg(long, default_value_t = 30)]
     progress_interval_secs: u64,
 
-    /// Provenance captured into the sibling JSON sidecar. `minimal` (default)
-    /// emits no PHI surface; `full` adds argv, hostname, and wall-clock start
-    /// time; `none` skips the sidecar entirely.
+    /// Provenance recorded in a JSON sidecar next to the output; with `none`,
+    /// no sidecar is written.
     #[arg(long, value_enum, default_value_t = ProvenanceMode::default())]
     provenance: ProvenanceMode,
 }

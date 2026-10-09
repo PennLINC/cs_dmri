@@ -21,75 +21,74 @@ use cs_dmri::multitissue::mtnormalise::{
 use cs_dmri::CsDmriError;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Multi-tissue intensity normalisation (native Rust)")]
+#[command(version, about = "Multi-tissue intensity normalisation and bias field correction in the log domain (Raffelt et al., 2017; Dhollander et al., 2021)")]
 struct Cli {
-    /// Input WM FOD NIfTI (4D, n_sh channels).
+    /// Input white matter FOD NIfTI (4D, one volume per SH coefficient).
     #[arg(long)]
     in_wm: PathBuf,
-    /// Input GM NIfTI (3D or 4D-with-singleton).
+    /// Input grey matter NIfTI (3D, or 4D with one volume).
     #[arg(long)]
     in_gm: PathBuf,
-    /// Input CSF NIfTI (3D or 4D-with-singleton).
+    /// Input CSF NIfTI (3D, or 4D with one volume).
     #[arg(long)]
     in_csf: PathBuf,
-    /// Brain mask NIfTI (3D bool).
+    /// Brain mask NIfTI (3D, binary).
     #[arg(long)]
     mask: PathBuf,
 
-    /// Output normalised WM FOD NIfTI (4D, n_sh channels).
+    /// Output normalised white matter FOD NIfTI (4D, one volume per SH
+    /// coefficient).
     #[arg(long)]
     out_wm: PathBuf,
-    /// Output normalised GM NIfTI (4D, 1 channel).
+    /// Output normalised grey matter NIfTI (4D, one volume).
     #[arg(long)]
     out_gm: PathBuf,
-    /// Output normalised CSF NIfTI (4D, 1 channel).
+    /// Output normalised CSF NIfTI (4D, one volume).
     #[arg(long)]
     out_csf: PathBuf,
 
-    /// Polynomial order for the spatial bias field (default 3, 20 monomials).
+    /// Order of the polynomial bias field model (order 3 has 20 terms).
     #[arg(long, default_value_t = 3)]
     poly_order: usize,
 
-    /// Target sum for normalised l=0 components per voxel. By default uses
-    /// the MRtrix3 `mtnormalise` convention: `1/sqrt(4π) ≈ 0.282` (sum of
-    /// SH coefficients across normalised tissues). Override with an explicit
-    /// value, or use `--target-median` to preserve the input's global scale.
+    /// Target value for the sum over tissues of the normalised l=0 SH
+    /// coefficients in each voxel. Default: 1/√(4π), as in MRtrix3
+    /// `mtnormalise`.
     #[arg(long)]
     target_sum: Option<f64>,
 
-    /// Use the median observed sum as the target (preserves the input's
-    /// global scale; only the spatial bias is removed). Use this when you
-    /// don't need MRtrix-compatible absolute scales.
+    /// Use the median of the observed sums as the target. The global scale
+    /// of the input is preserved and only the spatial bias field is removed.
     #[arg(long, conflicts_with = "target_sum")]
     target_median: bool,
 
-    /// Number of main iterations (field updates). Default 15, matching
-    /// MRtrix3 `mtnormalise`.
+    /// Number of outer iterations (bias field updates).
     #[arg(long, default_value_t = 15)]
     niter: usize,
 
-    /// Maximum iterations of the inner balance-factor / outlier-rejection
-    /// loop per main iteration. Default 7, matching MRtrix3.
+    /// Maximum number of iterations of the inner balance-factor and
+    /// outlier-rejection loop in each outer iteration.
     #[arg(long, default_value_t = 7)]
     balance_maxiter: usize,
 
-    /// Multiply the output tissues by their balance factors, like MRtrix3
-    /// `mtnormalise -balanced`. The balance factors always steer the field
-    /// estimation; this only bakes them into the output. Has critical
-    /// consequences for AFD normalisation — off by default.
+    /// Multiply each output tissue by its balance factor, as in MRtrix3
+    /// `mtnormalise -balanced`. Balance factors are used in bias field
+    /// estimation in either case; this option applies them to the outputs,
+    /// which changes the relative scale of the tissues.
     #[arg(long)]
     balanced: bool,
 
-    /// Also write the recovered bias field as a sibling NIfTI next to the
-    /// WM output (`<wm_stem>_bias.nii.gz`).
+    /// Also write the estimated bias field next to the white matter output
+    /// (`<wm_stem>_bias.nii.gz`).
     #[arg(long)]
     diagnostics: bool,
 
-    /// Allow overwriting existing outputs.
+    /// Overwrite existing output files. Without this flag, existing outputs
+    /// cause an error.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress per-step summary lines.
+    /// Suppress per-step summary messages.
     #[arg(long)]
     quiet: bool,
 }

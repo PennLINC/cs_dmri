@@ -19,33 +19,30 @@ use cs_dmri::{Heartbeat, ProvenanceBuilder, ProvenanceMode, effective_thread_cou
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Regularization {
-    /// L1 sparse fit via FISTA. (Default — matches qsirecon's CS path.)
+    /// L1-regularised (sparse) fit solved with FISTA. Default.
     L1,
-    /// L2 closed-form Tikhonov. Fast; useful for parity / smoke tests.
+    /// L2 (Tikhonov) fit with a closed-form solution.
     L2,
-    /// Goldfarb-Idnani ICLS with hard non-negativity on the *projected ODF
-    /// amplitudes* on a dense sphere. Use when downstream tools (peak
-    /// extraction, fixel viewers) need a guaranteed-positive ODF and L2's
-    /// post-hoc clamping is too lossy.
+    /// Least-squares fit subject to non-negativity of the ODF amplitudes on
+    /// a dense sphere, solved with the Goldfarb-Idnani inequality-constrained
+    /// least-squares method.
     AmpNn,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum AlphaMode {
-    /// Use a fixed α for every voxel (escape hatch / smoke tests).
+    /// The same α for every voxel (--alpha).
     Fixed,
-    /// Per voxel: α = ratio · α_max(voxel). Cheap, dimensionless, dataset-agnostic.
+    /// α = ratio · α_max for each voxel, where α_max is the smallest α giving
+    /// an all-zero solution (--alpha-ratio).
     AlphaRatio,
-    /// Per voxel: sweep a log-spaced α path α_max → α_max·eps, pick the α
-    /// minimizing BIC. Path-BIC is the historical default but mis-fires at
-    /// high b-value or low SNR / low FA (over- or under-sparsifies).
+    /// Along a logarithmic path from α_max to α_max·eps, the α minimising the
+    /// Bayesian information criterion.
     PathBic,
-    /// Per voxel: walk the same α path as PathBic, but pick the largest α
-    /// whose RSS is within `(1+slack) · RSS_L2`, where the L2 reference is
-    /// a per-voxel Tikhonov fit using `--lambda-n` / `--lambda-l`. Falls
-    /// back to argmin(RSS) if no α meets the slack. The robust default for
-    /// high-b CS-DSI, infant scans, and other low-SNR regimes; matches L2
-    /// reliability while keeping L1 sparsity.
+    /// Along the same path, the largest α whose residual sum of squares is
+    /// within (1 + slack) of a Tikhonov (L2) fit's, using --lambda-n and
+    /// --lambda-l. If no α satisfies the bound, the α with the smallest
+    /// residual sum of squares is used. Default.
     L2Anchored,
 }
 
@@ -61,148 +58,137 @@ struct Cli {
     /// FSL bvec file.
     #[arg(long)]
     bvec: PathBuf,
-    /// Optional brain mask NIfTI. Auto-generated from b0 mean if not provided.
+    /// Brain mask NIfTI. If omitted, a mask is computed from the mean b=0 image.
     #[arg(long)]
     mask: Option<PathBuf>,
-    /// Big delta Δ (seconds). If either delta is missing, both are estimated
-    /// via TORTOISE's max-bval heuristic.
+    /// Diffusion time Δ (big delta), in seconds. If either Δ or δ is omitted,
+    /// both are estimated from the maximum b-value and --gmax.
     #[arg(long)]
     big_delta: Option<f64>,
-    /// Small delta δ (seconds).
+    /// Gradient pulse duration δ (small delta), in seconds.
     #[arg(long)]
     small_delta: Option<f64>,
-    /// Maximum gradient amplitude (T/m), used only when deltas are estimated.
+    /// Maximum gradient amplitude, in T/m. Used only when Δ and δ are estimated.
     #[arg(long, default_value_t = TORTOISE_DEFAULT_GMAX)]
     gmax: f64,
     /// Output coefficient NIfTI path.
     #[arg(long)]
     output: PathBuf,
 
-    /// SHORE radial order (must be even-friendly per qsirecon convention; 6 by default).
+    /// SHORE radial order. Even values are expected.
     #[arg(long, default_value_t = 6)]
     radial_order: u32,
     /// SHORE scale parameter ζ.
     #[arg(long, default_value_t = 700.0)]
     zeta: f64,
 
-    /// Regularization mode.
+    /// Regularisation of the coefficient fit.
     #[arg(long, value_enum, default_value_t = Regularization::L1)]
     reg: Regularization,
 
-    /// L1 α-selection strategy. `l2-anchored` is the recommended default —
-    /// per voxel it picks the largest α whose RSS is within `(1+slack) ·
-    /// RSS_L2`, where the L2 reference is a Tikhonov fit. This caps fit
-    /// looseness against L2 directly and avoids the failure modes of
-    /// `path-bic` on high-b CS-DSI, infant scans, and other low-SNR
-    /// regimes (where BIC over- or under-sparsifies). Use `path-bic` for
-    /// qsirecon-parity / historical-default behavior.
+    /// Selection of the L1 sparsity weight α, made independently for each
+    /// voxel except in `fixed` mode.
     #[arg(long, value_enum, default_value_t = AlphaMode::L2Anchored)]
     alpha_mode: AlphaMode,
-    /// L1 sparsity weight α (only used when `--alpha-mode=fixed`).
+    /// L1 sparsity weight α. Used only with `--alpha-mode fixed`.
     #[arg(long, default_value_t = 1.0)]
     alpha: f64,
-    /// α / α_max ratio (only used when `--alpha-mode=alpha-ratio`). Typical 1e-3 .. 1e-2.
+    /// Ratio α / α_max, in (0, 1). Used only with `--alpha-mode alpha-ratio`.
     #[arg(long, default_value_t = 1e-3)]
     alpha_ratio: f64,
-    /// Number of α grid points along the regularization path
-    /// (path-bic / l2-anchored).
+    /// Number of α values on the regularisation path (path-bic, l2-anchored).
+    /// Must be at least 2.
     #[arg(long, default_value_t = 20)]
     path_n_alphas: usize,
-    /// α_min / α_max ratio along the regularization path
-    /// (path-bic / l2-anchored). Mode-dependent default: 1e-3 for path-bic
-    /// (backward-compatible) and 1e-4 for l2-anchored (lets the slack
-    /// constraint bind on every voxel — without this the path doesn't
-    /// reach an L2-good fit on high-b CS-DSI data and the selector falls
-    /// back). Override explicitly to use a single value across modes.
+    /// Ratio α_min / α_max of the regularisation path (path-bic,
+    /// l2-anchored), in (0, 1). Default: 1e-3 for path-bic and 1e-4 for
+    /// l2-anchored.
     #[arg(long)]
     path_eps: Option<f64>,
-    /// L2-residual slack for `--alpha-mode=l2-anchored`. Per voxel, the
-    /// selected α has RSS ≤ (1 + slack) · RSS_L2. Tighter values (0.02)
-    /// match L2's ODF cleanliness; looser (0.10) preserves more sparsity.
-    /// 0.05 is a good empirical default across infant + high-b regimes.
+    /// Residual tolerance for `--alpha-mode l2-anchored`: the selected α
+    /// satisfies RSS ≤ (1 + slack) · RSS_L2. Smaller values give fits closer
+    /// to the L2 fit; larger values give sparser fits. Must be ≥ 0.
     #[arg(long, default_value_t = 0.05)]
     slack: f64,
 
-    /// L1 max iterations (FISTA). Applies to every fit on the path.
+    /// Maximum number of FISTA iterations per L1 fit, including each fit on
+    /// the regularisation path.
     #[arg(long, default_value_t = 1000)]
     max_iter: u32,
-    /// L1 convergence tolerance (relative coefficient change).
+    /// L1 convergence tolerance on the relative change in coefficients.
     #[arg(long, default_value_t = 1e-6)]
     tol: f64,
     /// Enforce non-negative coefficients during the L1 fit.
     #[arg(long)]
     non_negative: bool,
 
-    /// L2 radial regularization weight λ_N.
+    /// L2 radial regularisation weight λ_N.
     #[arg(long, default_value_t = 1e-8)]
     lambda_n: f64,
-    /// L2 angular regularization weight λ_L.
+    /// L2 angular regularisation weight λ_L.
     #[arg(long, default_value_t = 1e-8)]
     lambda_l: f64,
 
-    /// `--reg amp-nn` only: Goldfarb-Idnani ICLS active-set max iterations.
+    /// Maximum number of active-set iterations for `--reg amp-nn`.
     #[arg(long, default_value_t = 200)]
     amp_nn_max_iter: usize,
-    /// `--reg amp-nn` only: constraint-satisfaction tolerance. A sphere
-    /// direction's amplitude is "satisfied" if it is ≥ -tol.
+    /// Constraint tolerance for `--reg amp-nn`: an ODF amplitude is treated
+    /// as non-negative if it is ≥ -tol.
     #[arg(long, default_value_t = 1e-9)]
     amp_nn_tol: f64,
-    /// `--reg amp-nn` only: Tikhonov stabilizer added to HᵀH diagonal.
-    /// Increase if Cholesky fails on rank-deficient designs.
+    /// Tikhonov term added to the diagonal of HᵀH for `--reg amp-nn`. Larger
+    /// values are needed if the Cholesky factorisation fails on a
+    /// rank-deficient design.
     #[arg(long, default_value_t = 1e-10)]
     amp_nn_epsilon: f64,
 
-    /// Also write per-voxel R², residual, iterations, regularization kind, and
-    /// (for L1 with a per-voxel α strategy) the chosen α map next to the
-    /// coefficient NIfTI.
+    /// Also write per-voxel maps of R², residual, iteration count and
+    /// regularisation type, and, for L1 fits with per-voxel α selection, the
+    /// selected α, next to the coefficient NIfTI.
     #[arg(long)]
     diagnostics: bool,
 
-    /// Keep bvecs in their FSL/image-axis frame instead of rotating them into
-    /// world-RAS. The default rotation is what TRXViz and most ODF viewers
-    /// assume; pass this flag for byte-for-byte parity with qsirecon /
-    /// dipy's `BrainSuiteShoreModel`, which fit in image-axis.
+    /// Fit with b-vectors in the image-axis (FSL) frame. By default b-vectors
+    /// are rotated into world (RAS) coordinates before fitting.
     #[arg(long)]
     no_bvec_rotation: bool,
 
-    /// Cap rayon's worker threads. If unset, picks up `$SLURM_CPUS_PER_TASK`,
-    /// then `$RAYON_NUM_THREADS`, else uses one worker per logical CPU.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Allow overwriting existing output files (default: refuse). Applies to
-    /// the coefficient NIfTI, sidecar JSON, and every `--diagnostics` sibling.
+    /// Overwrite existing output files. Without this flag, existing outputs
+    /// cause an error. Applies to the coefficient NIfTI, the sidecar JSON and
+    /// the `--diagnostics` maps.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress the periodic progress heartbeat and per-step summary lines.
-    /// Errors still go to stderr.
+    /// Suppress periodic progress and per-step summary messages. Errors are
+    /// still written to stderr.
     #[arg(long)]
     quiet: bool,
 
-    /// Seconds between heartbeat lines during the per-voxel fit. Default 30.
+    /// Interval between progress messages during the voxel-wise fit, in
+    /// seconds.
     #[arg(long, default_value_t = 30)]
     progress_interval_secs: u64,
 
-    /// Provenance captured into the sidecar JSON. `minimal` (default) keeps
-    /// no PHI surface — version, git SHA, build timestamp, threads, runtime
-    /// only. `full` adds argv, hostname, and wall-clock start; opt-in only
-    /// when input paths and host info are safe to retain. `none` skips it.
+    /// Provenance recorded in the sidecar JSON.
     #[arg(long, value_enum, default_value_t = ProvenanceMode::default())]
     provenance: ProvenanceMode,
 
-    /// Also project the fit to a Tournier-ordered ODX file at `PATH`
-    /// (one-step alternative to `cs-fit … && cs-odf …`). Defaults match
-    /// `cs-odf` — DSI-Studio ODF8 peak finder, brain-wide ODF normalization,
-    /// anisotropic-power DPV, lmax = largest even ≤ radial_order. For
-    /// custom peak settings, microstructure scalars, or alternative lmax,
-    /// run `cs-odf` against the coefficient NIfTI instead — the fit's most
-    /// expensive step is preserved either way.
+    /// Also write an ODX file of ODF SH coefficients (MRtrix3/Tournier
+    /// convention) to this path, using the `cs-odf` defaults: DSI Studio
+    /// ODF8 peak finding, brain-wide ODF normalisation, an anisotropic power
+    /// map, and lmax equal to the largest even integer
+    /// ≤ --radial-order. For other settings, run `cs-odf` on the coefficient
+    /// NIfTI.
     #[arg(long)]
     odx_output: Option<PathBuf>,
 
-    /// Emit `--odx-output` as a directory tree instead of a `.odx` zip
-    /// archive. Mirrors `cs-odf --directory`.
+    /// Write `--odx-output` as a directory instead of a `.odx` zip archive,
+    /// as with `cs-odf --directory`.
     #[arg(long)]
     odx_directory: bool,
 }

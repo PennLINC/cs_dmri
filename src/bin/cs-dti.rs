@@ -22,7 +22,7 @@ use cs_dmri::{
 };
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Robust diffusion-tensor fit via RESTORE (Chang et al. MRM 2005)")]
+#[command(version, about = "Robust diffusion tensor fit with RESTORE (Chang et al., MRM 2005)")]
 struct Cli {
     /// 4D DWI NIfTI input.
     #[arg(long)]
@@ -33,82 +33,91 @@ struct Cli {
     /// FSL bvec file.
     #[arg(long)]
     bvec: PathBuf,
-    /// Optional brain mask NIfTI. Auto-thresholded from b0 mean if absent.
+    /// Brain mask NIfTI. If omitted, a mask is computed by thresholding the
+    /// mean b=0 image.
     #[arg(long)]
     mask: Option<PathBuf>,
 
-    /// Output FA (fractional anisotropy) NIfTI (3D, ∈ [0, 1]).
+    /// Output fractional anisotropy (FA) NIfTI (3D, range [0, 1]).
     #[arg(long)]
     output_fa: PathBuf,
-    /// Output MD (mean diffusivity) NIfTI (3D, units track the bvals' convention).
+    /// Output mean diffusivity (MD) NIfTI (3D), in the inverse of the b-value
+    /// units.
     #[arg(long)]
     output_md: PathBuf,
-    /// Output S₀ NIfTI (3D, signal at b=0 in input units).
+    /// Output S₀ NIfTI (3D): fitted signal at b=0, in the units of the input.
     #[arg(long)]
     output_s0: PathBuf,
-    /// Output outlier-fraction NIfTI (3D, ∈ [0, 1]). RESTORE's QC channel.
+    /// Output outlier-fraction NIfTI (3D, range [0, 1]): the fraction of
+    /// measurements in each voxel classified as outliers (see
+    /// --outlier-threshold).
     #[arg(long)]
     output_outlier_fraction: PathBuf,
 
-    /// Optional: emit the full tensor NIfTI (4D, 6 components Dxx, Dxy, Dxz,
-    /// Dyy, Dyz, Dzz — BIDS lower-triangular order).
+    /// Output tensor NIfTI (4D, six components in the order Dxx, Dxy, Dxz,
+    /// Dyy, Dyz, Dzz).
     #[arg(long)]
     output_tensor: Option<PathBuf>,
-    /// Optional: emit the principal-eigenvector NIfTI (4D, 3 channels).
+    /// Output principal eigenvector NIfTI (4D, three components).
     #[arg(long)]
     output_principal_dir: Option<PathBuf>,
 
-    /// RESTORE max reweighting iterations (default 50).
+    /// Maximum number of RESTORE reweighting iterations.
     #[arg(long, default_value_t = 50)]
     max_iter: usize,
-    /// RESTORE convergence tolerance (relative change in tensor coefs).
+    /// RESTORE convergence tolerance on the relative change in tensor
+    /// coefficients.
     #[arg(long, default_value_t = 1e-6)]
     tol: f64,
-    /// Geman-McClure weight below which a measurement counts as an outlier
-    /// in the diagnostic mask. 0.04 corresponds to a residual of ~2σ
-    /// (the conventional outlier cut). Doesn't affect the fit, only the
-    /// QC channel.
+    /// Geman-McClure weight below which a measurement is counted as an
+    /// outlier in the outlier-fraction map. Does not affect the fit.
     #[arg(long, default_value_t = 0.04)]
     outlier_threshold: f64,
 
-    /// Big delta Δ (seconds). DTI doesn't use it; recorded only for the
-    /// gradient-table sidecar parity with `cs-fit`.
+    /// Diffusion time Δ (big delta), in seconds. Not used by the tensor fit;
+    /// accepted for consistency with `cs-fit`.
     #[arg(long)]
     big_delta: Option<f64>,
-    /// Small delta δ (seconds).
+    /// Gradient pulse duration δ (small delta), in seconds. Not used by the
+    /// tensor fit.
     #[arg(long)]
     small_delta: Option<f64>,
-    /// Maximum gradient amplitude (T/m); only used when deltas are estimated.
+    /// Maximum gradient amplitude, in T/m. Used only when Δ and δ are
+    /// estimated.
     #[arg(long, default_value_t = TORTOISE_DEFAULT_GMAX)]
     gmax: f64,
 
-    /// Also write `_iters` and `_converged` sibling NIfTIs next to the FA
-    /// output for QC.
+    /// Also write per-voxel iteration-count (`_iters`) and convergence
+    /// (`_converged`) maps next to the FA output.
     #[arg(long)]
     diagnostics: bool,
 
-    /// Keep bvecs in their FSL/image-axis frame instead of rotating them
-    /// into world-RAS. The default rotation matches the rest of cs_dmri.
+    /// Fit with b-vectors in the image-axis (FSL) frame. By default b-vectors
+    /// are rotated into world (RAS) coordinates before fitting.
     #[arg(long)]
     no_bvec_rotation: bool,
 
-    /// Cap rayon's worker threads.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Allow overwriting existing outputs (default: refuse).
+    /// Overwrite existing output files. Without this flag, existing outputs
+    /// cause an error.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress progress heartbeat and per-step summary lines.
+    /// Suppress periodic progress and per-step summary messages.
     #[arg(long)]
     quiet: bool,
 
-    /// Seconds between heartbeat lines during the per-voxel fit (default 30).
+    /// Interval between progress messages during the voxel-wise fit, in
+    /// seconds.
     #[arg(long, default_value_t = 30)]
     progress_interval_secs: u64,
 
-    /// Provenance captured into a sidecar JSON (next to `--output-fa`).
+    /// Provenance mode. Accepted for consistency with the other tools; `cs-dti`
+    /// writes no provenance record.
     #[arg(long, value_enum, default_value_t = ProvenanceMode::default())]
     provenance: ProvenanceMode,
 }

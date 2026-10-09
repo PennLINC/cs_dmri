@@ -29,9 +29,9 @@ use cs_dmri::{
 };
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Dhollander-2016 three-tissue response estimation (cs_dmri)")]
+#[command(version, about = "Estimate white matter, grey matter and CSF response functions (Dhollander et al., 2016)")]
 struct Cli {
-    /// 4D DWI NIfTI input (one b=0 shell + one DWI shell).
+    /// 4D DWI NIfTI input (b=0 volumes and one diffusion-weighted shell).
     #[arg(long)]
     dwi: PathBuf,
     /// FSL bval file.
@@ -40,107 +40,124 @@ struct Cli {
     /// FSL bvec file.
     #[arg(long)]
     bvec: PathBuf,
-    /// Optional brain mask NIfTI. Auto-thresholded from b0 mean if absent.
+    /// Brain mask NIfTI. If omitted, a mask is computed by thresholding the
+    /// mean b=0 image.
     #[arg(long)]
     mask: Option<PathBuf>,
 
-    /// Output WM single-fibre response (MRtrix `.txt` format).
+    /// Output single-fibre white matter response (MRtrix `.txt` format).
     #[arg(long)]
     output_wm: PathBuf,
-    /// Output GM response (MRtrix `.txt` format, 1 column).
+    /// Output grey matter response (MRtrix `.txt` format, one column).
     #[arg(long)]
     output_gm: PathBuf,
-    /// Output CSF response (MRtrix `.txt` format, 1 column).
+    /// Output CSF response (MRtrix `.txt` format, one column).
     #[arg(long)]
     output_csf: PathBuf,
 
-    /// Erosion passes applied to the brain mask before tissue selection.
+    /// Number of erosion passes applied to the brain mask before tissue
+    /// selection. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 3)]
     dh_erode: usize,
-    /// FA threshold for the crude WM vs GM-CSF split.
+    /// FA threshold for the initial separation of white matter from grey
+    /// matter and CSF. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.2)]
     dh_fa: f64,
-    /// Final single-fibre WM voxels, as a percentage of refined WM.
+    /// Number of single-fibre white matter voxels selected, as a percentage of
+    /// the refined white matter. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.5)]
     dh_sfwm: f64,
-    /// Final GM voxels, as a percentage of refined GM.
+    /// Number of grey matter voxels selected, as a percentage of the refined
+    /// grey matter. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.0)]
     dh_gm: f64,
-    /// Final CSF voxels, as a percentage of refined CSF.
+    /// Number of CSF voxels selected, as a percentage of the refined CSF. Not
+    /// used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 10.0)]
     dh_csf: f64,
-    /// Use the pre-2026 threshold-triple tissue selection (top-N%-MD CSF,
-    /// FA+dominance WM) instead of MRtrix's staged signal-decay-metric
-    /// algorithm. Only for reproducing older runs: its CSF class includes
-    /// partial-volume voxels, which depresses the CSF response amplitude.
+    /// Use the earlier threshold-based tissue selection instead of the staged
+    /// selection based on a signal decay metric. CSF voxels are those in the
+    /// top --md-csf-pct percent of MD; single-fibre white matter voxels have
+    /// FA above --fa-wm-threshold and eigenvalue ratio above
+    /// --fiber-dominance-ratio; the remaining voxels are grey matter. The CSF
+    /// class selected in this way can include partial-volume voxels.
     #[arg(long)]
     legacy_tissue_selection: bool,
 
-    /// FA above this counts a voxel as a WM single-fibre candidate.
-    /// `--legacy-tissue-selection` only.
+    /// FA above which a voxel is a single-fibre white matter candidate. Used
+    /// only with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.7)]
     fa_wm_threshold: f64,
-    /// Eigenvalue ratio λ₁ / mean(λ₂, λ₃): above this counts as
-    /// "single-fibre" (suppresses crossing voxels). Default 2.0; set
-    /// to 0 to skip.
+    /// Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fibre white
+    /// matter voxel; 0 disables the test. Used only with
+    /// --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.0)]
     fiber_dominance_ratio: f64,
-    /// Top-N percent of MD values are CSF candidates (default 2.5%).
+    /// Percentage of brain voxels with the highest MD that are selected as
+    /// CSF. Used only with --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.5)]
     md_csf_pct: f64,
-    /// Maximum SH order for the WM response.
+    /// Maximum SH order of the white matter response.
     #[arg(long, default_value_t = 8)]
     lmax_wm: usize,
 
-    /// RESTORE max reweighting iterations for the underlying DTI fit.
+    /// Maximum number of RESTORE reweighting iterations in the tensor fit.
     #[arg(long, default_value_t = 50)]
     restore_max_iter: usize,
-    /// RESTORE convergence tolerance.
+    /// RESTORE convergence tolerance on the relative change in tensor
+    /// coefficients.
     #[arg(long, default_value_t = 1e-6)]
     restore_tol: f64,
-    /// Geman-McClure weight cutoff for the DTI outlier-fraction map (only
-    /// affects diagnostics).
+    /// Geman-McClure weight below which a measurement is counted as an
+    /// outlier in the tensor fit's outlier fraction. Does not affect the fit.
     #[arg(long, default_value_t = 0.04)]
     restore_outlier_threshold: f64,
 
-    /// Big delta Δ (seconds). Recorded for sidecar parity; not used.
+    /// Diffusion time Δ (big delta), in seconds. Not used by response
+    /// estimation; accepted for consistency with `cs-fit`.
     #[arg(long)]
     big_delta: Option<f64>,
-    /// Small delta δ (seconds).
+    /// Gradient pulse duration δ (small delta), in seconds. Not used by
+    /// response estimation.
     #[arg(long)]
     small_delta: Option<f64>,
-    /// Maximum gradient amplitude (T/m); only used when deltas are estimated.
+    /// Maximum gradient amplitude, in T/m. Used only when Δ and δ are
+    /// estimated.
     #[arg(long, default_value_t = TORTOISE_DEFAULT_GMAX)]
     gmax: f64,
 
-    /// Also write per-tissue selection masks as sibling NIfTIs
-    /// (`<output_wm_stem>_mask_wm.nii.gz` etc.) for QC.
+    /// Also write the selected voxels of each tissue as mask NIfTIs
+    /// (`<output_wm_stem>_mask_wm.nii.gz`, `_mask_gm.nii.gz`,
+    /// `_mask_csf.nii.gz`).
     #[arg(long)]
     diagnostics: bool,
 
-    /// Keep bvecs in image-axis frame instead of rotating to world-RAS.
+    /// Use b-vectors in the image-axis (FSL) frame. By default b-vectors are
+    /// rotated into world (RAS) coordinates.
     #[arg(long)]
     no_bvec_rotation: bool,
 
-    /// Cap rayon's worker threads.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Allow overwriting existing outputs.
+    /// Overwrite existing `--diagnostics` mask NIfTIs. Without this flag,
+    /// existing masks cause an error. Response files are always written.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress progress heartbeat and per-step summary lines.
+    /// Suppress periodic progress and per-step summary messages.
     #[arg(long)]
     quiet: bool,
 
-    /// Seconds between heartbeat lines during the per-voxel DTI fit.
+    /// Interval between progress messages during the voxel-wise tensor fit,
+    /// in seconds.
     #[arg(long, default_value_t = 30)]
     progress_interval_secs: u64,
 
-    /// Provenance mode (currently informational only — `cs-response` doesn't
-    /// emit a sidecar JSON; provenance is encoded in the `.txt` header
-    /// comment line).
+    /// Provenance mode. Accepted for consistency with the other tools; `cs-
+    /// response` writes no provenance record.
     #[arg(long, value_enum, default_value_t = ProvenanceMode::default())]
     provenance: ProvenanceMode,
 }

@@ -15,8 +15,8 @@ Metrics (see :func:`column_descriptions` for full definitions):
 ``n_outlier_slices``
     Slices that don't lie between their two adjacent slices in the same volume.
 ``fixel_coherence``
-    FA-weighted share of voxels whose principal direction continues coherently
-    into a neighbour (0–1).
+    FA-weighted fraction of voxels whose principal direction agrees with that of
+    the voxel one lattice step along it (0–1).
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ def columns() -> list[str]:
 def column_descriptions(prefix: str = "") -> dict:
     """BIDS-style data dictionary for the QC table: ``{column: {"LongName",
     "Description", "Units"?, "Replaces"?}}``, ready to dump as the TSV's JSON
-    sidecar. ``Replaces`` names the DSI Studio column (as named in qsiprep) a
-    renamed column supersedes."""
+    sidecar. ``Replaces`` gives the name of a previously used column that a
+    column supersedes."""
     out = {}
     for c in _cs_dmri.qc_columns():
         c = dict(c)
@@ -108,7 +108,7 @@ class QCReport:
 
     def to_dict(self, prefix: str = "") -> dict:
         """Flat row keyed by :func:`columns` (with ``prefix``); absent values are
-        ``None``. This is the row qsiprep writes to ``desc-image_qc.tsv``."""
+        ``None``."""
         vs = self.voxel_size or (None, None, None)
         values = {
             "dimension_x": self.dimensions[0], "dimension_y": self.dimensions[1],
@@ -144,8 +144,9 @@ def _b0(gtab, b0_threshold):
 def neighboring_dwi_correlation(data, gtab, mask=None, *, b0_threshold=None, n_threads=None):
     """Mean correlation of each b>0 volume with its nearest q-space neighbour.
 
-    Order-invariant (every volume counts) and antipodally symmetric: dipy's
-    definition. ``None`` if no volume has a neighbour.
+    Every diffusion-weighted volume contributes one term, so the value does not
+    depend on volume order; neighbours are antipodally symmetric. ``None`` if no
+    volume has a neighbour.
     """
     gtab = as_gradient_table(gtab)
     vol = as_volume(data)

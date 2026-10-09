@@ -6,7 +6,7 @@
 //! | [`neighboring_dwi_correlation`] (NDC) | Mean correlation between each b>0 volume and its nearest q-space neighbour. Motion, eddy currents and signal dropout lower it. Below 0.4 flags a low-quality image (Yeh et al. 2019). |
 //! | [`dwi_contrast_ratio`] | Mean neighbour correlation ÷ mean correlation with each volume's most nearly perpendicular "contrast" volume. Near 1 the series carries little angular contrast; conventionally < 1.1 poor, 1.1–1.3 fair, > 1.3 good. |
 //! | [`outlier_slices`] | Slices that don't lie between their two adjacent slices in the same volume (signal dropout, corrupted slices). No other volume is consulted. |
-//! | [`fixel_coherence`] | Share (by FA weight) of above-threshold voxels whose principal diffusion direction continues coherently into a neighbouring voxel (odx-rs primary coherence). |
+//! | [`fixel_coherence`] | FA-weighted fraction of evaluated voxels whose principal direction agrees with that of the voxel one lattice step along it (odx-rs primary coherence). |
 //!
 //! [`assess`] computes the model-free metrics in one pass and returns a
 //! serialisable [`QcReport`]; `fixel_coherence` needs a tensor fit and is
@@ -14,20 +14,12 @@
 //!
 //! ## Conventions
 //!
-//! - **b=0 volumes** are those with `b ≤ b0_threshold` (a parameter; qsiprep
-//!   passes its own `b0_threshold`).
+//! - **b=0 volumes** are those with `b ≤ b0_threshold` (a parameter).
 //! - **Neighbours** are found in approximate q-space `√b · bvec`, treating `q`
-//!   and `−q` as the same direction, exactly as dipy does. Repeated
-//!   acquisitions of a q-space point may pair with each other. In merged AP+PA
-//!   series, where every volume's nearest neighbour is its twin from the other
-//!   run, that pairing measured slightly *lower* NDC than excluding twins
-//!   (0.786 vs 0.803 on a HASC55 AP+PA series): the twin carries cross-run
-//!   distortion and motion differences, so pairing with it is a consistency
-//!   check rather than an inflation.
-//! - **NDC averages over every b>0 volume.** DSI Studio instead keeps a pair
-//!   only when the volume's index exceeds its neighbour's, which makes NDC
-//!   depend on acquisition order (0.970–0.977 under random reorderings of one
-//!   HASC92 series, against a reorder-invariant 0.9733 here).
+//!   and `−q` as the same direction, as dipy does. Repeated acquisitions of a
+//!   q-space point may be each other's neighbours.
+//! - **NDC averages over every b>0 volume**, so it does not depend on the order
+//!   in which volumes are stored.
 //! - **Contrast volume:** for each candidate, its component perpendicular to the
 //!   reference q-vector is rescaled to the reference's length; the candidate
 //!   nearest that vector wins.
@@ -40,7 +32,7 @@
 //! The neighbour search and NDC are adapted from dipy's
 //! `dipy/stats/qc.py::find_qspace_neighbors` / `neighboring_dwi_correlation`,
 //! and the contrast-volume search from dipy PR #4224, which ports Fang-Cheng
-//! Yeh's DSI Studio definition with his permission. The adapted portions are
+//! Yeh's definition with his permission. The adapted portions are
 //! Copyright (c) 2008-2026, dipy developers, under the BSD 3-Clause licence in
 //! LICENSE-DIPY; the rest of this file is MIT OR Apache-2.0.
 //!
@@ -379,12 +371,9 @@ fn smooth_in_plane(data: &ArrayView4<f32>, v: usize, slice_axis: usize, kernel: 
 ///   ratio_k = mean|I_k − (I_{k−1} + I_{k+1})/2|  /  (½ · mean|I_{k+1} − I_{k−1}|)
 /// ```
 ///
-/// A slice consistent with its neighbours lies between them and scores below
-/// about 2 even in raw, low-SNR data (maximum 2.39 over ~64,000 slices of eight
-/// qsiprep test series, raw and preprocessed). Signal dropout or a corrupted
-/// slice pushes it away from both neighbours. A slice is flagged when the ratio
-/// exceeds `threshold`; on those series a dropout to 50% signal was caught 90%
-/// of the time and to 70% about two times in three.
+/// A slice consistent with its neighbours lies between them and has a small
+/// ratio. Signal dropout or corruption moves a slice away from both
+/// neighbours; it is flagged when the ratio exceeds `threshold`.
 pub fn outlier_slices(
     data: ArrayView4<f32>,
     mask: Option<ArrayView3<bool>>,
@@ -740,59 +729,60 @@ pub fn qc_columns() -> Vec<QcColumn> {
             "Diffusion-weighted volumes",
             "Number of volumes with b above the b=0 threshold.",
             None,
-            Some("num_directions (which counted volumes, not unique directions)"),
+            Some("num_directions"),
         ),
         c("n_b0_volumes", "b=0 volumes", "Number of volumes with b at or below the b=0 threshold.", None, None),
         c(
             "ndc",
             "Neighboring DWI correlation",
-            "Mean, over every b>0 volume, of the correlation between the volume and its nearest other b>0 \
-             volume in q-space (antipodally symmetric), over all voxels; dipy's definition. Unlike DSI \
-             Studio's version it does not depend on volume order. Below 0.4 flags a low-quality image \
-             (Yeh et al. 2019).",
+            "Mean, over all diffusion-weighted volumes, of the Pearson correlation between a volume and its \
+             nearest other diffusion-weighted volume in q-space (antipodally symmetric), computed over all \
+             voxels. Values below 0.4 indicate a low-quality image (Yeh et al. 2019).",
             None,
             Some("neighbor_corr"),
         ),
         c(
             "ndc_masked",
             "Neighboring DWI correlation (masked)",
-            "As ndc, computed inside the brain mask.",
+            "As ndc, computed over voxels inside the brain mask.",
             None,
-            Some("masked_neighbor_corr (which used DSI Studio's internal mask)"),
+            Some("masked_neighbor_corr"),
         ),
         c(
             "dwi_contrast_ratio",
             "DWI contrast ratio",
-            "Mean neighbour correlation divided by the mean correlation with each volume's most nearly \
-             perpendicular q-space volume, over all voxels. Highly mask-dependent; prefer the masked value.",
+            "Mean correlation between each diffusion-weighted volume and its q-space neighbour, divided by \
+             the mean correlation between each volume and the volume closest to perpendicular to it in \
+             q-space, computed over all voxels.",
             None,
             Some("dwi_contrast"),
         ),
         c(
             "dwi_contrast_ratio_masked",
             "DWI contrast ratio (masked)",
-            "As dwi_contrast_ratio, inside the brain mask. Conventionally below 1.1 poor, 1.1-1.3 fair, \
-             above 1.3 good.",
+            "As dwi_contrast_ratio, computed over voxels inside the brain mask. Values below 1.1 are \
+             conventionally regarded as poor, 1.1-1.3 as fair and above 1.3 as good.",
             None,
-            Some("dwi_contrast (which used DSI Studio's internal mask)"),
+            Some("dwi_contrast"),
         ),
         c(
             "n_outlier_slices",
             "Outlier slices",
-            "Number of (volume, slice) pairs that do not lie between their two adjacent slices in the same \
-             volume: after in-plane smoothing (sigma 2 voxels), the mean absolute deviation from the adjacent \
-             slices' average exceeds 2.5 times half their mean absolute difference, inside the brain mask. \
-             No other volume is consulted.",
+            "Number of (volume, slice) pairs flagged as outliers. After in-plane Gaussian smoothing \
+             (sigma 2 voxels), a slice is flagged when the mean absolute deviation of its in-mask voxels from \
+             the average of the two adjacent slices of the same volume exceeds 2.5 times half the mean \
+             absolute difference between those adjacent slices.",
             None,
             Some("num_bad_slices"),
         ),
         c(
             "fixel_coherence",
             "Fixel coherence",
-            "FA-weighted fraction (0-1) of voxels above the 10th FA percentile whose RESTORE principal \
-             direction continues within 15 degrees into a neighbouring voxel (odx-rs primary coherence).",
+            "FA-weighted fraction (0-1) of evaluated voxels whose RESTORE principal direction lies within \
+             15 degrees of the principal direction in the voxel one lattice step forward or backward along \
+             it. Voxels below the 10th percentile of FA are not evaluated.",
             None,
-            Some("coherence_index (an unbounded index from a GQI fib)"),
+            Some("coherence_index"),
         ),
     ]
 }

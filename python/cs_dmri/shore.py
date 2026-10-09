@@ -28,9 +28,9 @@ class ShoreModel:
     ----------
     gtab : GradientTable or dipy gradient table
     radial_order : int
-        Even; 6 gives 72 coefficients (qsirecon's default).
+        Even; 6 gives 72 coefficients. Default 6.
     zeta : float
-        Scale parameter (700 matches qsirecon / BrainSuite).
+        Scale parameter. Default 700.
     regularization : {"l1", "l2", "nonneg"}
         ``"l1"``: sparse FISTA fit with a per-voxel α (the compressed-sensing
         path). ``"l2"``: closed-form Tikhonov. ``"nonneg"``: ICLS with
@@ -44,8 +44,8 @@ class ShoreModel:
     lambda_n, lambda_l : float
         Tikhonov radial / angular weights (L2, and L2-anchored's reference).
     bvec_frame : {"auto", "world", "image"}
-        Frame of the fit (and of the SH coefficients). ``"auto"`` is world RAS
-        when the data come with an affine, as the ``cs-fit`` CLI does.
+        Frame of the fit and of the SH coefficients. ``"auto"`` uses world RAS
+        when an affine is known and the image's voxel axes otherwise.
     """
 
     def __init__(self, gtab, *, radial_order: int = 6, zeta: float = 700.0, regularization: str = "l1",

@@ -24,6 +24,11 @@ class DWI:
     QC and response estimation both use. The object is effectively immutable;
     :meth:`with_mask` returns a new one sharing the same data.
 
+    Loading through nibabel also checks the grid: masks must be on the DWI's
+    grid, and qform/sform disagreement, header zooms that do not match the
+    affine, and oblique grids are reported in :attr:`warnings` and as
+    :class:`~cs_dmri.SpatialWarning`.
+
     Parameters
     ----------
     data : array (X, Y, Z, N)
@@ -39,11 +44,6 @@ class DWI:
         The source NIfTI header. Everything cs_dmri writes for this series
         uses it as the template, so qform/sform codes and units survive.
         :meth:`from_files` / :meth:`from_nibabel` set it.
-
-    Loading through nibabel also checks the grid: masks must be on the DWI's
-    grid, and qform/sform disagreement, header zooms that don't match the
-    affine, and oblique grids are reported in :attr:`warnings` (and as
-    :class:`~cs_dmri.SpatialWarning`).
     """
 
     def __init__(self, data, gtab, *, affine=None, mask=None, header=None):

@@ -15,7 +15,10 @@ use clap::{Parser, ValueEnum};
 /// CLI flavour of [`LmaxWmStrategy`] — flat for clap.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum LmaxWmStrategyFlag {
+    /// The same lmax (--lmax-wm) for every voxel. Default.
     Fixed,
+    /// For each voxel, the lmax in --lmax-wm-candidates that minimises the
+    /// Bayesian information criterion.
     PathBic,
 }
 
@@ -35,9 +38,9 @@ use cs_dmri::{
 };
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Single-Shell 3-Tissue CSD (Dhollander 2016) — native Rust port")]
+#[command(version, about = "Single-shell three-tissue constrained spherical deconvolution (SS3T-CSD; Dhollander and Connelly, 2016)")]
 struct Cli {
-    /// 4D DWI NIfTI input (one b=0 shell + one DWI shell).
+    /// 4D DWI NIfTI input (b=0 volumes and one diffusion-weighted shell).
     #[arg(long)]
     dwi: PathBuf,
     /// FSL bval file.
@@ -46,105 +49,111 @@ struct Cli {
     /// FSL bvec file.
     #[arg(long)]
     bvec: PathBuf,
-    /// Optional brain mask NIfTI. Auto-generated from b0 mean if absent.
+    /// Brain mask NIfTI. If omitted, a mask is computed from the mean b=0
+    /// image.
     #[arg(long)]
     mask: Option<PathBuf>,
 
-    /// MRtrix-format WM single-fibre response (.txt). Two rows expected:
-    /// b=0 (isotropic) and the DWI shell (anisotropic, lmax ≥ requested
-    /// `--lmax-wm`).
+    /// Single-fibre white matter response in MRtrix `.txt` format, with two
+    /// rows: b=0 (isotropic) and the diffusion-weighted shell (lmax at least
+    /// --lmax-wm).
     #[arg(long)]
     response_wm: PathBuf,
-    /// MRtrix-format GM response (.txt). Two rows, one column each (lmax = 0).
+    /// Grey matter response in MRtrix `.txt` format: two rows of one column
+    /// each (lmax = 0).
     #[arg(long)]
     response_gm: PathBuf,
-    /// MRtrix-format CSF response (.txt). Two rows, one column each (lmax = 0).
+    /// CSF response in MRtrix `.txt` format: two rows of one column each
+    /// (lmax = 0).
     #[arg(long)]
     response_csf: PathBuf,
 
-    /// Output WM FOD NIfTI (4D, n_sh_wm volumes).
+    /// Output white matter FOD NIfTI (4D, one volume per SH coefficient).
     #[arg(long)]
     output_wm: PathBuf,
-    /// Output GM compartment NIfTI (4D, 1 volume).
+    /// Output grey matter compartment NIfTI (4D, one volume).
     #[arg(long)]
     output_gm: PathBuf,
-    /// Output CSF compartment NIfTI (4D, 1 volume).
+    /// Output CSF compartment NIfTI (4D, one volume).
     #[arg(long)]
     output_csf: PathBuf,
 
-    /// SS3T outer iterations (default 3, must be ≥ 2).
+    /// Number of SS3T outer iterations. Must be at least 2.
     #[arg(long, default_value_t = 3)]
     niter: u32,
-    /// b=0 contribution as a percentage of the non-b=0 volumes (default 10).
+    /// Weight of the b=0 volumes in the fit, as a percentage of the
+    /// diffusion-weighted volumes. Must be positive.
     #[arg(long, default_value_t = 10.0)]
     bzero_pct: f64,
-    /// WM SH-order strategy. `fixed` uses a single lmax (the `--lmax-wm`
-    /// value) for every voxel — qsirecon parity. `path-bic` sweeps the
-    /// candidates listed in `--lmax-wm-candidates` per voxel and picks
-    /// the one minimising BIC. CSF/GM voxels auto-select lmax=0 (fast);
-    /// only crossing-fiber WM benefits from lmax=8.
+    /// Selection of the white matter SH order (lmax).
     #[arg(long, value_enum, default_value_t = LmaxWmStrategyFlag::Fixed)]
     lmax_wm_strategy: LmaxWmStrategyFlag,
-    /// `--lmax-wm-strategy=fixed` only: WM SH order. Clamped to the WM
-    /// response file's lmax.
+    /// White matter SH order for `--lmax-wm-strategy fixed`. Limited to the
+    /// lmax of the white matter response.
     #[arg(long, default_value_t = 8)]
     lmax_wm: usize,
-    /// `--lmax-wm-strategy=path-bic` only: comma-separated list of
-    /// candidate even lmaxes (default: 0,2,4,6,8).
+    /// Comma-separated candidate even SH orders for
+    /// `--lmax-wm-strategy path-bic`.
     #[arg(long, value_delimiter = ',', default_values_t = vec![0_usize, 2, 4, 6, 8])]
     lmax_wm_candidates: Vec<usize>,
 
-    /// Inner ICLS active-set iterations.
+    /// Maximum number of active-set iterations of the inner
+    /// inequality-constrained least-squares (ICLS) solver.
     #[arg(long, default_value_t = 200)]
     icls_max_iter: usize,
-    /// Inner ICLS constraint tolerance: a constraint is "satisfied" if
-    /// `(C x)_i ≥ -tol`.
+    /// ICLS constraint tolerance: constraint i is satisfied if
+    /// (C x)_i ≥ -tol.
     #[arg(long, default_value_t = 1e-10)]
     icls_tol: f64,
-    /// Inner ICLS Tikhonov stabiliser ε added to HᵀH diagonal to guarantee
-    /// strict positive-definiteness.
+    /// Tikhonov term ε added to the diagonal of HᵀH in the ICLS solver to
+    /// ensure strict positive definiteness.
     #[arg(long, default_value_t = 1e-10)]
     icls_epsilon: f64,
 
-    /// Big delta Δ (seconds). Used by `qspace::GradientTable` for any
-    /// downstream q-space derivation; SS3T itself does not need it.
+    /// Diffusion time Δ (big delta), in seconds. Not used by SS3T-CSD;
+    /// accepted for consistency with `cs-fit`.
     #[arg(long)]
     big_delta: Option<f64>,
-    /// Small delta δ (seconds).
+    /// Gradient pulse duration δ (small delta), in seconds. Not used by
+    /// SS3T-CSD.
     #[arg(long)]
     small_delta: Option<f64>,
-    /// Maximum gradient amplitude (T/m), used only when deltas are estimated.
+    /// Maximum gradient amplitude, in T/m. Used only when Δ and δ are
+    /// estimated.
     #[arg(long, default_value_t = TORTOISE_DEFAULT_GMAX)]
     gmax: f64,
 
-    /// Also write per-voxel diagnostic NIfTIs (`_iters.nii.gz`,
-    /// `_residual.nii.gz`, `_converged.nii.gz`) next to the WM output.
+    /// Also write per-voxel maps of iteration count (`_iters.nii.gz`),
+    /// residual (`_residual.nii.gz`) and convergence (`_converged.nii.gz`)
+    /// next to the white matter output.
     #[arg(long)]
     diagnostics: bool,
 
-    /// Keep bvecs in their FSL/image-axis frame instead of rotating them
-    /// into world-RAS. Default rotation matches `cs-fit`'s convention.
+    /// Fit with b-vectors in the image-axis (FSL) frame. By default b-vectors
+    /// are rotated into world (RAS) coordinates before fitting.
     #[arg(long)]
     no_bvec_rotation: bool,
 
-    /// Cap rayon's worker threads. If unset, picks up `$SLURM_CPUS_PER_TASK`,
-    /// then `$RAYON_NUM_THREADS`, else uses one worker per logical CPU.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Allow overwriting existing outputs (default: refuse).
+    /// Overwrite existing output files. Without this flag, existing outputs
+    /// cause an error.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress progress heartbeat and per-step summary lines.
+    /// Suppress periodic progress and per-step summary messages.
     #[arg(long)]
     quiet: bool,
 
-    /// Seconds between heartbeat lines during the per-voxel fit (default 30).
+    /// Interval between progress messages during the voxel-wise fit, in
+    /// seconds.
     #[arg(long, default_value_t = 30)]
     progress_interval_secs: u64,
 
-    /// Provenance captured into the sidecar JSON.
+    /// Provenance recorded in the sidecar JSON.
     #[arg(long, value_enum, default_value_t = ProvenanceMode::default())]
     provenance: ProvenanceMode,
 }

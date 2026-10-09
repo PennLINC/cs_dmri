@@ -14,9 +14,9 @@ def fit_frame(bvec_frame: str, affine) -> tuple[str, np.ndarray]:
     """Resolve ``bvec_frame`` to ``("world" | "image", R)`` where ``R`` rotates
     image-axis vectors into the fit frame (identity for "image").
 
-    ``"auto"`` means world RAS when an affine is known, as the CLI does by
-    default, so SH coefficients and ODX output are in world space. ``"image"``
-    keeps dipy's convention (directions in the image's voxel axes).
+    ``"auto"`` means world RAS when an affine is known, so that SH coefficients
+    and ODX output are in world space. ``"image"`` keeps directions in the
+    image's voxel axes.
     """
     if bvec_frame not in FRAMES:
         raise ValueError(f"bvec_frame must be one of {FRAMES}, got {bvec_frame!r}")

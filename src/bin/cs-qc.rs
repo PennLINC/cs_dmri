@@ -19,7 +19,7 @@ use cs_dmri::qspace::{BvecFrame, TORTOISE_DEFAULT_GMAX};
 use cs_dmri::{Heartbeat, configure_rayon_threads};
 
 #[derive(Parser, Debug)]
-#[command(version, about = "DWI image-quality metrics (NDC, DWI contrast ratio, outlier slices, fixel coherence)")]
+#[command(version, about = "DWI image-quality metrics: neighboring DWI correlation (NDC), DWI contrast ratio, outlier slices and fixel coherence")]
 struct Cli {
     /// 4D DWI NIfTI input.
     #[arg(long)]
@@ -30,35 +30,39 @@ struct Cli {
     /// FSL bvec file.
     #[arg(long)]
     bvec: PathBuf,
-    /// Brain mask NIfTI on the DWI grid. Without one the masked metrics use a
-    /// fallback mask (mean b=0 above 1% of its maximum), recorded as
-    /// `mask_source: auto-b0` in the JSON.
+    /// Brain mask NIfTI on the DWI grid. If omitted, the masked metrics use
+    /// voxels where the mean b=0 image exceeds 1% of its maximum, and the
+    /// JSON report records `mask_source: auto-b0`.
     #[arg(long)]
     mask: Option<PathBuf>,
-    /// Volumes with b at or below this are b=0.
+    /// b-value at or below which a volume is treated as b=0, in s/mm².
     #[arg(long, default_value_t = 50.0)]
     b0_threshold: f64,
-    /// Spatial axis (0, 1 or 2) that outlier slices are taken along.
+    /// Spatial axis (0, 1 or 2) along which slices are assessed for outliers.
     #[arg(long, default_value_t = 2)]
     slice_axis: usize,
-    /// Skip the tensor fit and fixel coherence.
+    /// Do not fit the diffusion tensor or compute fixel coherence.
     #[arg(long)]
     no_coherence: bool,
-    /// Write the full report (metrics, flagged slices, settings) as JSON.
+    /// Write the full report (metrics, outlier slices and settings) as JSON.
     #[arg(long)]
     output_json: Option<PathBuf>,
-    /// Write the flat metrics as a one-row TSV, plus `<stem>.json` describing
-    /// each column.
+    /// Write the metrics as a one-row TSV, with a `<stem>.json` data
+    /// dictionary describing each column.
     #[arg(long)]
     output_tsv: Option<PathBuf>,
-    /// Prefix for TSV column names (e.g. `raw_`).
+    /// Prefix added to TSV column names (e.g. `raw_`).
     #[arg(long, default_value = "")]
     prefix: String,
-    /// Cap rayon's worker threads.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
+    /// Overwrite existing output files. Without this flag, existing outputs
+    /// cause an error.
     #[arg(long)]
     overwrite: bool,
+    /// Suppress progress and summary messages on stderr.
     #[arg(long)]
     quiet: bool,
 }

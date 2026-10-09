@@ -30,62 +30,58 @@ use odx_rs::mrtrix_sh::ANISOTROPIC_POWER_NORM_FACTOR;
 use odx_rs::reference_affine::read_reference_affine;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Project SHORE coefficients to Tournier ODF SH and write ODX")]
+#[command(version, about = "Project SHORE coefficients onto ODF spherical harmonics (MRtrix3/Tournier convention) and write an ODX file")]
 struct Cli {
-    /// Coefficient NIfTI from cs-fit (sidecar JSON read alongside).
+    /// Coefficient NIfTI written by cs-fit. The JSON sidecar is read from the
+    /// same location.
     #[arg(long)]
     coeffs: PathBuf,
-    /// Output .odx path (or directory when --directory is set).
+    /// Output .odx file, or output directory with --directory.
     #[arg(long)]
     output: PathBuf,
-    /// Optional brain mask NIfTI; defaults to "any nonzero coefficient voxel".
+    /// Brain mask NIfTI. If omitted, all voxels with at least one non-zero
+    /// coefficient are used.
     #[arg(long)]
     mask: Option<PathBuf>,
-    /// Maximum even SH order; defaults to largest even ≤ radial_order.
+    /// Maximum (even) SH order. Default: the largest even integer ≤ the SHORE
+    /// radial order.
     #[arg(long)]
     lmax: Option<u32>,
-    /// Field name under sh/ in the ODX. Default "coefficients" (the field name
-    /// trxviz and odx-rs's mrtrix loader both expect for SH glyph rendering).
+    /// Name of the SH field under sh/ in the ODX.
     #[arg(long, default_value = "coefficients")]
     name: String,
-    /// Emit a directory tree instead of a zipped .odx archive.
+    /// Write the ODX as a directory instead of a zip archive.
     #[arg(long)]
     directory: bool,
 
-    /// Skip the per-voxel anisotropic-power DPV (Dell'Acqua 2014). DPV is what
-    /// most ODX viewers render as a slice background; only set this if you
-    /// already have your own scalar map to display.
+    /// Do not compute the per-voxel anisotropic power map (Dell'Acqua et al.,
+    /// 2014).
     #[arg(long)]
     no_anisotropic_power: bool,
 
-    /// `norm_factor` for the AP log-shift; matches dipy's default 1e-5.
+    /// Normalisation factor in the logarithm of the anisotropic power map.
     #[arg(long, default_value_t = ANISOTROPIC_POWER_NORM_FACTOR)]
     ap_norm_factor: f64,
 
-    /// Skip DSI-Studio-style global ODF normalization. By default we compute
-    /// per-voxel QA = max(ODF) − min(ODF), take the global maximum across the
-    /// brain, and divide every voxel's SH coefficients by that scalar. This
-    /// preserves *relative* amplitudes between voxels (high-FA stays larger
-    /// than low-FA) while capping the brightest peak at 1, which is what most
-    /// ODF viewers assume when sizing glyphs.
+    /// Do not apply global ODF normalisation. By default the quantity
+    /// QA = max(ODF) − min(ODF) is computed in each voxel, and all SH
+    /// coefficients are divided by its maximum over the mask, as in DSI
+    /// Studio. Relative amplitudes between voxels are preserved.
     #[arg(long)]
     no_global_normalize: bool,
 
-    /// Skip auto-loading of per-voxel diagnostic sibling NIfTIs (`<stem>_r2.nii.gz`,
-    /// `<stem>_rmse.nii.gz`, `<stem>_alpha.nii.gz`, `<stem>_bic.nii.gz`,
-    /// `<stem>_sparsity.nii.gz`) emitted by `cs-fit --diagnostics`. By default
-    /// we look for these next to the coefficients NIfTI and copy each one that
-    /// exists into the ODX as a DPV.
+    /// Do not copy the diagnostic maps written by `cs-fit --diagnostics`
+    /// (`<stem>_r2.nii.gz`, `<stem>_rmse.nii.gz`, `<stem>_alpha.nii.gz`,
+    /// `<stem>_bic.nii.gz`, `<stem>_sparsity.nii.gz`) into the ODX. By
+    /// default, each of these found next to the coefficient NIfTI is stored
+    /// as a per-voxel field.
     #[arg(long)]
     no_diagnostic_dpvs: bool,
 
-    /// Skip per-voxel peak (fixel) extraction. By default we delegate to
-    /// `odx-rs::peak_finder::SpherePeakFinder::find_peaks_with_sh`: sample each
-    /// ODF on the DSI Studio ODF8 hemisphere (321 vertices) to seed local
-    /// maxima, prune with relative-threshold + separation-angle, then
-    /// Newton-refine each accepted seed in continuous SH (mirroring MRtrix's
-    /// `Math::SH::get_peak`) so the recorded peak directions are sub-vertex.
-    /// Disable to keep the output SH-only.
+    /// Do not extract ODF peaks (fixels). By default, local maxima of each ODF
+    /// are located on the DSI Studio ODF8 hemisphere (321 vertices), filtered
+    /// by relative amplitude and angular separation, and refined by Newton
+    /// iteration on the continuous SH representation.
     #[arg(long)]
     no_peaks: bool,
 
@@ -93,92 +89,78 @@ struct Cli {
     #[arg(long, default_value_t = SHORE_ODX_DEFAULT_NPEAKS)]
     peak_npeaks: usize,
 
-    /// Drop peaks below this fraction of the voxel's strongest peak.
+    /// Discard peaks with amplitude below this fraction of the largest peak in
+    /// the voxel.
     #[arg(long, default_value_t = SHORE_ODX_DEFAULT_REL_THRESH)]
     peak_relative_threshold: f32,
 
-    /// Minimum angular separation (degrees) between accepted peaks.
+    /// Minimum angular separation between peaks, in degrees.
     #[arg(long, default_value_t = SHORE_ODX_DEFAULT_MIN_SEP_DEG)]
     peak_min_separation_deg: f32,
 
-    /// Cap rayon's worker threads. If unset, picks up `$SLURM_CPUS_PER_TASK`,
-    /// then `$RAYON_NUM_THREADS`, else uses one worker per logical CPU.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Allow overwriting an existing output ODX, output directory, or
-    /// sibling microstructure NIfTI. Default: refuse.
+    /// Overwrite an existing output ODX, output directory or microstructure
+    /// NIfTI. Without this flag, existing outputs cause an error.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress periodic progress heartbeat and per-step summary lines.
+    /// Suppress periodic progress and per-step summary messages.
     #[arg(long)]
     quiet: bool,
 
-    /// Seconds between heartbeat lines during long parallel loops. Default 30.
+    /// Interval between progress messages, in seconds.
     #[arg(long, default_value_t = 30)]
     progress_interval_secs: u64,
 
-    /// Provenance captured into the ODX (as the extra value
-    /// `cs_dmri_provenance`). `minimal` (default) emits no PHI surface;
-    /// `full` adds argv, hostname, and wall-clock start time; `none` skips it.
+    /// Provenance recorded in the ODX as the extra value `cs_dmri_provenance`.
     #[arg(long, value_enum, default_value_t = ProvenanceMode::default())]
     provenance: ProvenanceMode,
 
-    /// Skip computing SHORE/MAPMRI propagator microstructure scalars (RTOP,
-    /// RTAP, RTPP, MSD, QIV, NG). By default these are computed per voxel,
-    /// fit-failure outliers are rejected to NaN (see
-    /// `--microstructure-outlier-factor`), and the result is embedded as
-    /// DPVs in the output ODX alongside per-scalar display-range stats
-    /// (`cs_dmri_microstructure_display`) and reject counts
-    /// (`cs_dmri_microstructure_outliers`). RTAP/RTPP need a first-peak
-    /// direction; voxels without a detected peak come back as NaN.
-    ///
-    /// Closed-form derivations: see `cs_dmri/scripts/microstructure_math.md`.
+    /// Do not compute propagator scalars from the SHORE coefficients: return
+    /// to the origin, axis and plane probabilities (RTOP, RTAP, RTPP), mean
+    /// squared displacement (MSD), q-space inverse variance (QIV) and
+    /// non-Gaussianity (NG). By default these are computed in each voxel,
+    /// outliers are set to NaN (see `--microstructure-outlier-factor`), and
+    /// the maps are stored as per-voxel fields in the ODX together with
+    /// per-scalar display ranges (`cs_dmri_microstructure_display`) and
+    /// outlier counts (`cs_dmri_microstructure_outliers`). RTAP and RTPP are
+    /// defined relative to the first peak direction and are NaN in voxels
+    /// without a peak.
     #[arg(long)]
     no_microstructure: bool,
 
-    /// Also write each microstructure scalar to a sibling NIfTI of the ODX
-    /// (`<output_stem>_rtop.nii.gz`, …) using the canonical RAS+ affine.
-    /// Off by default — the DPVs in the ODX cover the visualization use case.
+    /// Also write each propagator scalar to a NIfTI next to the ODX
+    /// (`<output_stem>_rtop.nii.gz`, …) with the RAS+ affine.
     #[arg(long, alias = "microstructure")]
     microstructure_nifti: bool,
 
-    /// NaN microstructure-scalar values above `K × p99` per scalar. With
-    /// `p99/median ≈ 8` for these scalars, K=10 corresponds to "anything
-    /// more than ~80× the brain median is a fit failure, not signal."
-    /// Bigger values reject only the most pathological outliers; smaller
-    /// trims further into the upper tail. Set to a very large number
-    /// (effectively `inf`) to keep all finite values; pair with
-    /// `--no-microstructure-outlier-rejection` to disable entirely.
+    /// Outlier threshold factor K: values of a propagator scalar greater
+    /// than K times the 99th percentile of its finite values within the mask
+    /// are set to NaN.
     #[arg(long, default_value_t = 10.0)]
     microstructure_outlier_factor: f32,
 
-    /// Disable fit-failure rejection entirely — every finite microstructure
-    /// value lands in the ODX, including the `5000× the median` outliers
-    /// that arise from degenerate SHORE fits. Use only for debugging fit
-    /// quality (you'll see the unphysical voxels intact).
+    /// Disable outlier rejection for propagator scalars. All finite values
+    /// are retained.
     #[arg(long)]
     no_microstructure_outlier_rejection: bool,
 
-    /// Length unit for emitted microstructure scalars.
-    ///
-    /// `um` (default) matches TORTOISE's `EstimateMAPMRI` output convention:
-    /// q-vectors expressed in 1/μm, so RTOP is in /μm³, RTAP in /μm², RTPP in
-    /// /μm, MSD in μm², QIV in μm⁵. Values fall in TORTOISE's familiar
-    /// [0, ~few] range for brain tissue.
-    ///
-    /// `mm` keeps the dipy / cs_dmri internal convention (q in 1/mm), which
-    /// makes RTOP ~1e5/mm³ — physically equivalent, just larger numbers.
+    /// Length unit of the propagator scalars.
     #[arg(long, value_enum, default_value_t = ScalarUnits::Um)]
     scalar_units: ScalarUnits,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum ScalarUnits {
-    /// TORTOISE convention: q in 1/μm, RTOP in /μm³, etc.
+    /// q in 1/μm: RTOP in μm⁻³, RTAP in μm⁻², RTPP in μm⁻¹, MSD in μm², QIV
+    /// in μm⁵. Default.
     Um,
-    /// dipy / cs_dmri internal convention: q in 1/mm, RTOP in /mm³, etc.
+    /// q in 1/mm: RTOP in mm⁻³, RTAP in mm⁻², RTPP in mm⁻¹, MSD in mm², QIV
+    /// in mm⁵.
     Mm,
 }
 

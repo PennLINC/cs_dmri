@@ -42,10 +42,10 @@ use cs_dmri::{
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "End-to-end SS3T pipeline (response estimation → SS3T → mtnormalise)"
+    about = "Single-shell three-tissue pipeline: response function estimation, SS3T-CSD and multi-tissue intensity normalisation"
 )]
 struct Cli {
-    /// 4D DWI NIfTI input (one b=0 + one DWI shell).
+    /// 4D DWI NIfTI input (b=0 volumes and one diffusion-weighted shell).
     #[arg(long)]
     dwi: PathBuf,
     /// FSL bval file.
@@ -54,153 +54,179 @@ struct Cli {
     /// FSL bvec file.
     #[arg(long)]
     bvec: PathBuf,
-    /// Optional brain mask NIfTI.
+    /// Brain mask NIfTI. If omitted, a mask is computed from the mean b=0
+    /// image.
     #[arg(long)]
     mask: Option<PathBuf>,
 
-    /// Output WM FOD NIfTI (after normalisation, unless `--no-normalize`).
-    /// Required unless `--odx` is given.
+    /// Output white matter FOD NIfTI, normalised unless `--no-normalize` is
+    /// given. Required unless `--odx` is given.
     #[arg(long)]
     output_wm: Option<PathBuf>,
-    /// Output GM compartment NIfTI. Required unless `--odx` is given.
+    /// Output grey matter compartment NIfTI. Required unless `--odx` is
+    /// given.
     #[arg(long)]
     output_gm: Option<PathBuf>,
     /// Output CSF compartment NIfTI. Required unless `--odx` is given.
     #[arg(long)]
     output_csf: Option<PathBuf>,
 
-    /// Write a single ODX file bundling WM SH (canonical), GM/CSF (in `sh/`),
-    /// brain mask, response functions (in header), and WM peaks. When set,
-    /// the three NIfTI outputs are skipped. Use a `.odx` extension for an
-    /// archive; any other extension/path becomes a directory tree.
+    /// Write a single ODX file containing the white matter SH coefficients,
+    /// the grey matter and CSF compartments (under `sh/`), the brain mask,
+    /// the response functions (in the header) and white matter peaks. The
+    /// NIfTI outputs are then not written. A path with a `.odx` extension is
+    /// written as a zip archive; any other path is written as a directory.
     #[arg(long, value_name = "PATH")]
     odx: Option<PathBuf>,
 
-    /// Skip response estimation: use this WM `.txt` file instead.
-    /// Provide all three of `--response-{wm,gm,csf}` to skip estimation.
+    /// White matter response in MRtrix `.txt` format. If all three of
+    /// `--response-{wm,gm,csf}` are given, response estimation is skipped.
     #[arg(long, requires = "response_gm", requires = "response_csf")]
     response_wm: Option<PathBuf>,
-    /// Skip response estimation: use this GM `.txt` file.
+    /// Grey matter response in MRtrix `.txt` format (see --response-wm).
     #[arg(long)]
     response_gm: Option<PathBuf>,
-    /// Skip response estimation: use this CSF `.txt` file.
+    /// CSF response in MRtrix `.txt` format (see --response-wm).
     #[arg(long)]
     response_csf: Option<PathBuf>,
 
-    /// Optional: write the estimated responses to disk for inspection or
-    /// reuse. Only honored when responses are estimated (no
-    /// `--response-*` overrides).
+    /// Directory in which to write the estimated responses
+    /// (`wm_response.txt`, `gm_response.txt`, `csf_response.txt`). Ignored
+    /// when responses are supplied with `--response-*`.
     #[arg(long)]
     write_responses_to: Option<PathBuf>,
 
-    /// Skip the final mtnormalise step. Useful when downstream tools
-    /// expect raw SS3T outputs or have their own normalisation.
+    /// Do not apply multi-tissue intensity normalisation; the SS3T-CSD
+    /// outputs are written as fitted.
     #[arg(long)]
     no_normalize: bool,
 
     // ---- Response estimation knobs (Dhollander) ----
-    /// Erosion passes applied to the brain mask before tissue selection.
+    /// Number of erosion passes applied to the brain mask before tissue
+    /// selection. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 3)]
     dh_erode: usize,
-    /// FA threshold for the crude WM vs GM-CSF split.
+    /// FA threshold for the initial separation of white matter from grey
+    /// matter and CSF. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.2)]
     dh_fa: f64,
-    /// Final single-fibre WM voxels, as a percentage of refined WM.
+    /// Number of single-fibre white matter voxels selected, as a percentage of
+    /// the refined white matter. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.5)]
     dh_sfwm: f64,
-    /// Final GM voxels, as a percentage of refined GM.
+    /// Number of grey matter voxels selected, as a percentage of the refined
+    /// grey matter. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.0)]
     dh_gm: f64,
-    /// Final CSF voxels, as a percentage of refined CSF.
+    /// Number of CSF voxels selected, as a percentage of the refined CSF. Not
+    /// used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 10.0)]
     dh_csf: f64,
-    /// Use the pre-2026 threshold-triple tissue selection (top-N%-MD CSF,
-    /// FA+dominance WM) instead of MRtrix's staged signal-decay-metric
-    /// algorithm. Only for reproducing older runs: its CSF class includes
-    /// partial-volume voxels, which depresses the CSF response amplitude.
+    /// Use the earlier threshold-based tissue selection instead of the staged
+    /// selection based on a signal decay metric. CSF voxels are those in the
+    /// top --md-csf-pct percent of MD; single-fibre white matter voxels have
+    /// FA above --fa-wm-threshold and eigenvalue ratio above
+    /// --fiber-dominance-ratio; the remaining voxels are grey matter. The CSF
+    /// class selected in this way can include partial-volume voxels.
     #[arg(long)]
     legacy_tissue_selection: bool,
 
-    /// FA above this counts a voxel as a WM single-fibre candidate.
-    /// `--legacy-tissue-selection` only.
+    /// FA above which a voxel is a single-fibre white matter candidate. Used
+    /// only with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.7)]
     fa_wm_threshold: f64,
-    /// Eigenvalue ratio gate for "single fibre" (suppresses crossings).
+    /// Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fibre white
+    /// matter voxel; 0 disables the test. Used only with
+    /// --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.0)]
     fiber_dominance_ratio: f64,
-    /// Top-N percent of MD voxels classified as CSF.
+    /// Percentage of brain voxels with the highest MD that are selected as
+    /// CSF. Used only with --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.5)]
     md_csf_pct: f64,
 
     // ---- SS3T knobs ----
-    /// SS3T outer iterations.
+    /// Number of SS3T outer iterations. Must be at least 2.
     #[arg(long, default_value_t = 3)]
     niter: u32,
-    /// b=0 contribution percentage.
+    /// Weight of the b=0 volumes in the SS3T fit, as a percentage of the
+    /// diffusion-weighted volumes. Must be positive.
     #[arg(long, default_value_t = 10.0)]
     bzero_pct: f64,
-    /// Maximum WM SH order.
+    /// Maximum SH order of the white matter FOD and response.
     #[arg(long, default_value_t = 8)]
     lmax_wm: usize,
 
     // ---- mtnormalise knobs ----
-    /// Polynomial order for the bias-field fit (default 3 = 20 monomials).
+    /// Order of the polynomial bias field model in the normalisation step
+    /// (order 3 has 20 terms).
     #[arg(long, default_value_t = 3)]
     mtnorm_poly_order: usize,
-    /// Use the median observed l=0 sum as mtnormalise's target instead of
-    /// the MRtrix default (`1/sqrt(4π) ≈ 0.282`). Preserves input scale.
+    /// In the normalisation step, use the median of the observed sums of l=0
+    /// coefficients as the target instead of 1/√(4π). The global scale of
+    /// the input is preserved.
     #[arg(long)]
     mtnorm_target_median: bool,
-    /// Apply the per-tissue balance factors to the output, like MRtrix3
-    /// `mtnormalise -balanced`. Off by default, matching MRtrix.
+    /// Multiply each output tissue by its balance factor, as in MRtrix3
+    /// `mtnormalise -balanced`.
     #[arg(long)]
     mtnorm_balanced: bool,
 
     // ---- DTI / RESTORE knobs ----
-    /// RESTORE max iterations for the underlying DTI fit (used only when
-    /// estimating responses).
+    /// Maximum number of RESTORE reweighting iterations in the tensor fit
+    /// used for response estimation.
     #[arg(long, default_value_t = 50)]
     restore_max_iter: usize,
-    /// RESTORE convergence tolerance.
+    /// RESTORE convergence tolerance on the relative change in tensor
+    /// coefficients.
     #[arg(long, default_value_t = 1e-6)]
     restore_tol: f64,
 
     // ---- Standard ----
-    /// Big delta Δ (seconds), recorded for provenance only.
+    /// Diffusion time Δ (big delta), in seconds. Not used by the pipeline;
+    /// accepted for consistency with `cs-fit`.
     #[arg(long)]
     big_delta: Option<f64>,
-    /// Small delta δ (seconds).
+    /// Gradient pulse duration δ (small delta), in seconds. Not used by the
+    /// pipeline.
     #[arg(long)]
     small_delta: Option<f64>,
-    /// Maximum gradient amplitude (T/m).
+    /// Maximum gradient amplitude, in T/m. Used only when Δ and δ are
+    /// estimated.
     #[arg(long, default_value_t = TORTOISE_DEFAULT_GMAX)]
     gmax: f64,
 
-    /// Also write `_iters`, `_residual`, `_converged` sibling NIfTIs.
+    /// Also write per-voxel maps of iteration count (`_iters.nii.gz`),
+    /// residual (`_residual.nii.gz`) and convergence (`_converged.nii.gz`)
+    /// next to `--output-wm`. Not written with `--odx`.
     #[arg(long)]
     diagnostics: bool,
 
-    /// Keep bvecs in image-axis frame.
+    /// Fit with b-vectors in the image-axis (FSL) frame. By default b-vectors
+    /// are rotated into world (RAS) coordinates before fitting.
     #[arg(long)]
     no_bvec_rotation: bool,
 
-    /// Cap rayon's worker threads.
+    /// Number of worker threads. If omitted, `$SLURM_CPUS_PER_TASK` is used,
+    /// then `$RAYON_NUM_THREADS`, otherwise one thread per logical CPU.
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Allow overwriting existing outputs.
+    /// Overwrite existing output files. Without this flag, existing outputs
+    /// cause an error.
     #[arg(long)]
     overwrite: bool,
 
-    /// Suppress per-step summary lines.
+    /// Suppress periodic progress and per-step summary messages.
     #[arg(long)]
     quiet: bool,
 
-    /// Seconds between heartbeat lines during long parallel loops.
+    /// Interval between progress messages, in seconds.
     #[arg(long, default_value_t = 30)]
     progress_interval_secs: u64,
 
-    /// Provenance mode (currently informational only).
+    /// Provenance mode. Accepted for consistency with the other tools; `cs-
+    /// ss3t-full` writes no provenance record.
     #[arg(long, value_enum, default_value_t = ProvenanceMode::default())]
     provenance: ProvenanceMode,
 }
