@@ -41,7 +41,7 @@ text.
 ## Releases
 
 The version is set once, in `[workspace.package]` of the top-level
-`Cargo.toml`. Pushing a tag `vX.Y.Z` that matches it builds wheels for all
+`Cargo.toml`. Pushing a tag `X.Y.Z` that matches it builds wheels for all
 supported platforms and an sdist, and publishes them to PyPI.
 
 ## Licensing of contributions

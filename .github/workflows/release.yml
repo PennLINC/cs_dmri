@@ -1,10 +1,10 @@
 name: Release wheels + PyPI
 
-# Trigger on version tags (e.g. v0.1.0, v0.2.0-rc1) or manual dispatch.
+# Trigger on bare semver tags (e.g. 0.1.0, 0.2.0rc1) or manual dispatch.
 on:
   push:
     tags:
-      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ env:
 jobs:
   # ─── Tag / version sanity check ────────────────────────────────────────────
   #
-  # Refuses to build if the pushed tag (`vX.Y.Z`) doesn't match the version
+  # Refuses to build if the pushed tag (`X.Y.Z`) doesn't match the version
   # in [workspace.package] of Cargo.toml. Catches "I tagged but forgot to
   # bump" before we waste 4× wheel build minutes on a wrong-version release.
   # All build jobs `needs: verify-version`, so a mismatch fails the whole
@@ -45,14 +45,14 @@ jobs:
           echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
           # Only enforce tag<->version match when triggered by a tag push.
           # workflow_dispatch and re-runs without a tag fall through.
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
             echo "Not a tag push; skipping tag<->version match."
             exit 0
           fi
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG_VERSION="${GITHUB_REF#refs/tags/}"
           echo "Tag:           $TAG_VERSION"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag v$TAG_VERSION does not match [workspace.package].version = \"$PKG_VERSION\". Bump Cargo.toml or retag."
+            echo "::error::Tag $TAG_VERSION does not match [workspace.package].version = \"$PKG_VERSION\". Bump Cargo.toml or retag."
             exit 1
           fi
 
@@ -292,7 +292,7 @@ jobs:
     name: Publish to PyPI
     needs: [linux, macos, windows, sdist]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/')
     environment:
       name: pypi
       url: https://pypi.org/p/cs_dmri
