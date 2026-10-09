@@ -7,8 +7,8 @@
 //! constrained super-resolved spherical deconvolution"* — extended trivially to
 //! arbitrary linear inequality constraints `B x ≥ 0`.
 //!
-//! The algorithm minimises `½‖Hx − b‖²` subject to `B x ≥ 0` by repeatedly
-//! solving a Tikhonov-regularised problem in which the rows of `B` that
+//! The algorithm minimizes `½‖Hx − b‖²` subject to `B x ≥ 0` by repeatedly
+//! solving a Tikhonov-regularized problem in which the rows of `B` that
 //! produce negative responses on the current iterate are added (with weight
 //! λ) to the design as a soft penalty:
 //!
@@ -35,7 +35,7 @@ pub struct CsdConfig {
     /// to the active set. Use `0.0` for the standard non-negativity constraint;
     /// use a small negative value to relax.
     pub tau: f64,
-    /// Tikhonov stabiliser added to the diagonal of `HᵀH` to guarantee a
+    /// Tikhonov stabilizer added to the diagonal of `HᵀH` to guarantee a
     /// positive-definite normal-equations matrix even before any constraints
     /// are active.
     pub epsilon: f64,
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn linear_constraint_on_amplitude_pushes_solution_into_feasible_region() {
         // x is a 1-vector. Constraint: 1·x ≥ 0 ⇒ x ≥ 0. b = -2 ⇒ unconstrained
-        // minimiser is x = -2; constrained is x = 0.
+        // minimizer is x = -2; constrained is x = 0.
         let h = DMatrix::<f64>::from_row_slice(1, 1, &[1.0]);
         let b = DVector::<f64>::from_row_slice(&[-2.0]);
         let constraint = DMatrix::<f64>::from_row_slice(1, 1, &[1.0]);

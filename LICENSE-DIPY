@@ -9,7 +9,7 @@ src/qc.rs contains functions ported from DIPY (https://dipy.org/):
     #4224 (https://github.com/dipy/dipy/pull/4224), which adds them to
     `dipy/stats/qc.py`.
 
-These portions are distributed under DIPY's BSD 3-Clause licence:
+These portions are distributed under DIPY's BSD 3-Clause license:
 
 ------------------------------------------------------------------------
 

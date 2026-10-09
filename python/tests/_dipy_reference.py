@@ -3,7 +3,7 @@
 # find_qspace_contrast / dwi_contrast are from dipy pull request #4224
 # (https://github.com/dipy/dipy/pull/4224, head dc32011), which was not yet in
 # a dipy release. Copyright (c) 2008-2026, dipy developers; BSD 3-Clause
-# licence, reproduced in LICENSE-DIPY at the repository root.
+# license, reproduced in LICENSE-DIPY at the repository root.
 import numpy as np
 
 

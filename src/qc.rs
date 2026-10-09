@@ -3,21 +3,21 @@
 //!
 //! | Metric | What it measures |
 //! |---|---|
-//! | [`neighboring_dwi_correlation`] (NDC) | Mean correlation between each b>0 volume and its nearest q-space neighbour. Motion, eddy currents and signal dropout lower it. Below 0.4 flags a low-quality image (Yeh et al. 2019). |
-//! | [`dwi_contrast_ratio`] | Mean neighbour correlation ÷ mean correlation with each volume's most nearly perpendicular "contrast" volume. Near 1 the series carries little angular contrast; conventionally < 1.1 poor, 1.1–1.3 fair, > 1.3 good. |
+//! | [`neighboring_dwi_correlation`] (NDC) | Mean correlation between each b>0 volume and its nearest q-space neighbor. Motion, eddy currents and signal dropout lower it. Below 0.4 flags a low-quality image (Yeh et al. 2019). |
+//! | [`dwi_contrast_ratio`] | Mean neighbor correlation ÷ mean correlation with each volume's most nearly perpendicular "contrast" volume. Near 1 the series carries little angular contrast; conventionally < 1.1 poor, 1.1–1.3 fair, > 1.3 good. |
 //! | [`outlier_slices`] | Slices that don't lie between their two adjacent slices in the same volume (signal dropout, corrupted slices). No other volume is consulted. |
 //! | [`fixel_coherence`] | FA-weighted fraction of evaluated voxels whose principal direction agrees with that of the voxel one lattice step along it (odx-rs primary coherence). |
 //!
 //! [`assess`] computes the model-free metrics in one pass and returns a
-//! serialisable [`QcReport`]; `fixel_coherence` needs a tensor fit and is
+//! serializable [`QcReport`]; `fixel_coherence` needs a tensor fit and is
 //! computed separately.
 //!
 //! ## Conventions
 //!
 //! - **b=0 volumes** are those with `b ≤ b0_threshold` (a parameter).
-//! - **Neighbours** are found in approximate q-space `√b · bvec`, treating `q`
+//! - **Neighbors** are found in approximate q-space `√b · bvec`, treating `q`
 //!   and `−q` as the same direction, as dipy does. Repeated acquisitions of a
-//!   q-space point may be each other's neighbours.
+//!   q-space point may be each other's neighbors.
 //! - **NDC averages over every b>0 volume**, so it does not depend on the order
 //!   in which volumes are stored.
 //! - **Contrast volume:** for each candidate, its component perpendicular to the
@@ -29,11 +29,11 @@
 //!
 //! ## Provenance
 //!
-//! The neighbour search and NDC are adapted from dipy's
+//! The neighbor search and NDC are adapted from dipy's
 //! `dipy/stats/qc.py::find_qspace_neighbors` / `neighboring_dwi_correlation`,
 //! and the contrast-volume search from dipy PR #4224, which ports Fang-Cheng
 //! Yeh's definition with his permission. The adapted portions are
-//! Copyright (c) 2008-2026, dipy developers, under the BSD 3-Clause licence in
+//! Copyright (c) 2008-2026, dipy developers, under the BSD 3-Clause license in
 //! LICENSE-DIPY; the rest of this file is MIT OR Apache-2.0.
 //!
 //! References:
@@ -88,9 +88,9 @@ fn dwi_indices(bvals: &[f64], b0_threshold: f64) -> Vec<usize> {
 }
 
 /// For each b>0 volume, its nearest other b>0 volume in approximate q-space
-/// (antipodally symmetric), as `(volume, neighbour)` pairs in volume order.
+/// (antipodally symmetric), as `(volume, neighbor)` pairs in volume order.
 /// Ties go to the lowest index. Matches dipy's `find_qspace_neighbors`, except
-/// that a lone b>0 volume has no neighbour here (dipy pairs it with a b=0).
+/// that a lone b>0 volume has no neighbor here (dipy pairs it with a b=0).
 pub fn find_qspace_neighbors(gtab: &GradientTable, b0_threshold: f64) -> Vec<(usize, usize)> {
     let q = qvecs(&gtab.bvals, &gtab.bvecs);
     let dwi = dwi_indices(&gtab.bvals, b0_threshold);
@@ -214,8 +214,8 @@ fn check_shapes(data: &ArrayView4<f32>, gtab: &GradientTable, mask: Option<Array
 }
 
 /// Neighboring DWI Correlation: mean over b>0 volumes of each volume's
-/// correlation with its q-space neighbour ([`find_qspace_neighbors`]), over
-/// `mask` (or every voxel). `None` when no volume has a neighbour.
+/// correlation with its q-space neighbor ([`find_qspace_neighbors`]), over
+/// `mask` (or every voxel). `None` when no volume has a neighbor.
 pub fn neighboring_dwi_correlation(
     data: ArrayView4<f32>,
     gtab: &GradientTable,
@@ -233,9 +233,9 @@ pub fn neighboring_dwi_correlation(
     Ok(mean(&r))
 }
 
-/// DWI contrast ratio: mean neighbour correlation ÷ mean contrast-volume
+/// DWI contrast ratio: mean neighbor correlation ÷ mean contrast-volume
 /// correlation, over `mask` (or every voxel). Both means run over the volumes
-/// that have both a neighbour and a contrast volume. `None` if there are none.
+/// that have both a neighbor and a contrast volume. `None` if there are none.
 pub fn dwi_contrast_ratio(
     data: ArrayView4<f32>,
     gtab: &GradientTable,
@@ -315,7 +315,7 @@ impl OutlierSlices {
     }
 }
 
-/// Normalised 1-D Gaussian kernel, radius `round(4σ)` (scipy's default).
+/// Normalized 1-D Gaussian kernel, radius `round(4σ)` (scipy's default).
 fn gaussian_kernel(sigma: f64) -> Vec<f64> {
     let r = (4.0 * sigma + 0.5) as isize;
     let w: Vec<f64> = (-r..=r).map(|x| (-0.5 * (x * x) as f64 / (sigma * sigma)).exp()).collect();
@@ -371,9 +371,9 @@ fn smooth_in_plane(data: &ArrayView4<f32>, v: usize, slice_axis: usize, kernel: 
 ///   ratio_k = mean|I_k − (I_{k−1} + I_{k+1})/2|  /  (½ · mean|I_{k+1} − I_{k−1}|)
 /// ```
 ///
-/// A slice consistent with its neighbours lies between them and has a small
+/// A slice consistent with its neighbors lies between them and has a small
 /// ratio. Signal dropout or corruption moves a slice away from both
-/// neighbours; it is flagged when the ratio exceeds `threshold`.
+/// neighbors; it is flagged when the ratio exceeds `threshold`.
 pub fn outlier_slices(
     data: ArrayView4<f32>,
     mask: Option<ArrayView3<bool>>,
@@ -457,7 +457,7 @@ pub struct CoherenceOptions {
     /// Drop the lowest `quantile` of FA (over voxels with a direction) before
     /// scoring. Default 0.1 (odx-rs `DEFAULT_QC_QUANTILE`).
     pub quantile: f32,
-    /// Maximum angle (degrees) between neighbouring directions for them to
+    /// Maximum angle (degrees) between neighboring directions for them to
     /// count as connected. Default 15.
     pub angle_degrees: f32,
 }
@@ -474,7 +474,7 @@ impl Default for CoherenceOptions {
 /// Coherence of the principal-direction field.
 #[derive(Debug, Clone, Serialize)]
 pub struct CoherenceReport {
-    /// FA-weighted share of evaluated voxels connected to a coherent neighbour,
+    /// FA-weighted share of evaluated voxels connected to a coherent neighbor,
     /// in [0, 1]. `None` if nothing passed the threshold.
     pub coherence: Option<f64>,
     /// d ln(coherence) / d ln(threshold); near 0 means the index does not
@@ -751,7 +751,7 @@ pub fn qc_columns() -> Vec<QcColumn> {
         c(
             "dwi_contrast_ratio",
             "DWI contrast ratio",
-            "Mean correlation between each diffusion-weighted volume and its q-space neighbour, divided by \
+            "Mean correlation between each diffusion-weighted volume and its q-space neighbor, divided by \
              the mean correlation between each volume and the volume closest to perpendicular to it in \
              q-space, computed over all voxels.",
             None,
@@ -895,7 +895,7 @@ mod tests {
 
     /// dipy's doctest for `find_qspace_neighbors`, plus our repeat rule:
     /// volume 3 repeats volume 1's direction at a different b, so it is a
-    /// legitimate neighbour, unlike an exact repeat.
+    /// legitimate neighbor, unlike an exact repeat.
     #[test]
     fn neighbors_match_dipy_doctest() {
         let g = gtab(
@@ -914,7 +914,7 @@ mod tests {
         assert_eq!(find_qspace_neighbors(&g, 50.0)[0], (1, 3));
     }
 
-    /// A repeated acquisition of the same q-space point is a valid neighbour.
+    /// A repeated acquisition of the same q-space point is a valid neighbor.
     #[test]
     fn repeats_pair_with_each_other() {
         let g = gtab(
@@ -976,7 +976,7 @@ mod tests {
         assert!(neighboring_dwi_correlation(d.view(), &g, None, 50.0).is_err());
     }
 
-    /// Synthetic fibre-like series with a shared anatomical baseline.
+    /// Synthetic fiber-like series with a shared anatomical baseline.
     fn synthetic(n: usize, seed: u64) -> (GradientTable, Array4<f32>) {
         let mut bvals = vec![0.0];
         let mut bvecs = vec![[0.0, 0.0, 0.0]];

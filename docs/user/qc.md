@@ -23,8 +23,8 @@ convention (`LongName`, `Description`, `Units`) describing each column.
 Let $q_i = \sqrt{b_i}\,\mathbf{g}_i$ be the approximate q-space position of
 volume $i$, with $b$-value $b_i$ and unit gradient direction $\mathbf{g}_i$.
 For every diffusion-weighted volume $i$ (those with $b_i$ above the b=0
-threshold), its neighbour $n(i)$ is the other diffusion-weighted volume that
-minimises
+threshold), its neighbor $n(i)$ is the other diffusion-weighted volume that
+minimizes
 
 $$
 \min\left(\lVert q_i - q_j \rVert,\ \lVert q_i + q_j \rVert\right),
@@ -41,7 +41,7 @@ $$
 
 Because every diffusion-weighted volume contributes one term, the value does
 not depend on the order in which volumes are stored. Head motion, eddy-current
-distortion and signal dropout reduce the correlation between neighbouring
+distortion and signal dropout reduce the correlation between neighboring
 volumes and therefore lower NDC. Yeh et al. (2019) suggest that values below 0.4
 indicate a low-quality image.
 
@@ -62,7 +62,7 @@ $$
 $$
 
 A ratio close to one indicates that volumes acquired along perpendicular
-directions are about as similar as neighbouring ones, that is, the series
+directions are about as similar as neighboring ones, that is, the series
 carries little angular contrast. Values below 1.1 are conventionally regarded as
 poor, 1.1–1.3 as fair and above 1.3 as good. The ratio depends strongly on the
 mask, so `dwi_contrast_ratio_masked` should be preferred.
@@ -79,8 +79,8 @@ R_k = \frac{\operatorname{mean}_v \left| I_k(v) - \tfrac{1}{2}\left(I_{k-1}(v) +
            {\tfrac{1}{2}\operatorname{mean}_v \left| I_{k+1}(v) - I_{k-1}(v) \right|}.
 $$
 
-A slice that varies smoothly between its neighbours has a small ratio. A slice
-affected by signal dropout or corruption departs from both neighbours, and is
+A slice that varies smoothly between its neighbors has a small ratio. A slice
+affected by signal dropout or corruption departs from both neighbors, and is
 flagged when $R_k$ exceeds 2.5. Slices with fewer than 100 in-mask voxels and
 the first and last slice are not scored. `n_outlier_slices` counts the flagged
 (volume, slice) pairs; the Python report also lists them

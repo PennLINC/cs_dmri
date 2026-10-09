@@ -21,10 +21,10 @@ Options:
           Brain mask NIfTI. If omitted, a mask is computed from the mean b=0 image
 
       --response-wm <RESPONSE_WM>
-          Single-fibre white matter response in MRtrix `.txt` format, with two rows: b=0 (isotropic) and the diffusion-weighted shell (lmax at least --lmax-wm)
+          Single-fiber white matter response in MRtrix `.txt` format, with two rows: b=0 (isotropic) and the diffusion-weighted shell (lmax at least --lmax-wm)
 
       --response-gm <RESPONSE_GM>
-          Grey matter response in MRtrix `.txt` format: two rows of one column each (lmax = 0)
+          Gray matter response in MRtrix `.txt` format: two rows of one column each (lmax = 0)
 
       --response-csf <RESPONSE_CSF>
           CSF response in MRtrix `.txt` format: two rows of one column each (lmax = 0)
@@ -33,7 +33,7 @@ Options:
           Output white matter FOD NIfTI (4D, one volume per SH coefficient)
 
       --output-gm <OUTPUT_GM>
-          Output grey matter compartment NIfTI (4D, one volume)
+          Output gray matter compartment NIfTI (4D, one volume)
 
       --output-csf <OUTPUT_CSF>
           Output CSF compartment NIfTI (4D, one volume)
@@ -53,7 +53,7 @@ Options:
 
           Possible values:
           - fixed:    The same lmax (--lmax-wm) for every voxel. Default
-          - path-bic: For each voxel, the lmax in --lmax-wm-candidates that minimises the Bayesian information criterion
+          - path-bic: For each voxel, the lmax in --lmax-wm-candidates that minimizes the Bayesian information criterion
           
           [default: fixed]
 

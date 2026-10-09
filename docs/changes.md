@@ -10,5 +10,5 @@ First release.
   propagator-derived scalars and signal synthesis.
 - RESTORE diffusion tensor fitting.
 - Three-tissue response estimation, SS3T-CSD and multi-tissue intensity
-  normalisation.
+  normalization.
 - Python interface.

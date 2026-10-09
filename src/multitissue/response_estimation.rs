@@ -8,7 +8,7 @@
 //! cs_dmri can now go from raw DWI → response → SS3T → mtnormalise without
 //! external MRtrix tools.
 //!
-//! Outputs three MRtrix-compatible `.txt` files (WM single-fibre, GM, CSF)
+//! Outputs three MRtrix-compatible `.txt` files (WM single-fiber, GM, CSF)
 //! that drop straight into [`super::ss3t`].
 //!
 //! ## Algorithm
@@ -19,7 +19,7 @@
 //!      runs, in [`super::dhollander`]. Use this for anything compared against
 //!      MRtrix.
 //!    - Legacy (`legacy_selection = true`) — the original threshold triple:
-//!      CSF = top `md_csf_pct` of MD, WM single-fibre = FA above
+//!      CSF = top `md_csf_pct` of MD, WM single-fiber = FA above
 //!      `fa_wm_threshold` with principal-eigenvalue dominance
 //!      `λ₁ / ((λ₂ + λ₃)/2)` above `fiber_dominance_ratio`, GM = the rest.
 //!      Kept so existing results stay reproducible; its CSF class admits
@@ -64,10 +64,10 @@ pub struct DhollanderConfig {
     pub legacy_selection: bool,
     /// Tuning for the staged (default) selection.
     pub stages: DhollanderSelectConfig,
-    /// FA above this counts a voxel as WM single-fibre candidate. Legacy only.
+    /// FA above this counts a voxel as WM single-fiber candidate. Legacy only.
     pub fa_wm_threshold: f64,
     /// Eigenvalue ratio `λ₁ / ((λ₂ + λ₃) / 2)`: above this counts as
-    /// "single-fibre" (suppresses crossings). Set to 0 to skip the test.
+    /// "single-fiber" (suppresses crossings). Set to 0 to skip the test.
     pub fiber_dominance_ratio: f64,
     /// Top-N percent of MD values are CSF candidates (default 2.5%).
     pub md_csf_pct: f64,
@@ -100,14 +100,14 @@ pub struct ResponseEstimationDiagnostics {
     pub md_csf_threshold: f64,
     /// Per-stage voxel counts, when the staged selection ran.
     pub stages: Option<DhollanderStageCounts>,
-    /// Median b=0 signal over the WM single-fibre voxels the response was fit
+    /// Median b=0 signal over the WM single-fiber voxels the response was fit
     /// from — the natural per-scan `DWI_ref` for AFD quantification.
     ///
-    /// The WM single-fibre population is the best available "same tissue in
+    /// The WM single-fiber population is the best available "same tissue in
     /// every subject" reference: it is the same voxels whose S0 the response was
-    /// normalized by, so expressing fibre density relative to it is what makes
+    /// normalized by, so expressing fiber density relative to it is what makes
     /// one unit of AFD mean the same thing across scans (Smith et al. 2022,
-    /// "global intensity normalisation"). 0.0 if no WM voxels were selected.
+    /// "global intensity normalization"). 0.0 if no WM voxels were selected.
     pub wm_b0_median: f64,
 }
 
@@ -405,7 +405,7 @@ fn collect_brain_voxels(dwi: &DwiData, dti: &DtiVolumeResult) -> Vec<Voxel> {
     brain
 }
 
-/// Pick the WM single-fibre / GM / CSF training populations.
+/// Pick the WM single-fiber / GM / CSF training populations.
 ///
 /// Dispatches to the staged MRtrix algorithm ([`super::dhollander`]) unless
 /// `cfg.legacy_selection` is set.
@@ -473,7 +473,7 @@ fn select_tissues<'a>(
 }
 
 /// The original threshold-triple selection: CSF = top-`md_csf_pct` MD;
-/// WM single-fibre = high FA + eigenvalue dominance; GM = the rest.
+/// WM single-fiber = high FA + eigenvalue dominance; GM = the rest.
 fn select_tissues_legacy<'a>(
     brain: &'a [Voxel],
     shape: (usize, usize, usize),
@@ -507,7 +507,7 @@ fn select_tissues_legacy<'a>(
     }
     if wm.is_empty() {
         return Err(CsDmriError::Other(format!(
-            "response estimation: no WM single-fibre voxels — lower --fa-wm-threshold ({}) or --fiber-dominance-ratio ({})",
+            "response estimation: no WM single-fiber voxels — lower --fa-wm-threshold ({}) or --fiber-dominance-ratio ({})",
             cfg.fa_wm_threshold, cfg.fiber_dominance_ratio
         )));
     }
@@ -529,7 +529,7 @@ fn select_tissues_legacy<'a>(
 }
 
 /// Median of the per-voxel mean b=0 signal over `voxels`. Over the WM
-/// single-fibre voxels this is the `DWI_ref` recorded in
+/// single-fiber voxels this is the `DWI_ref` recorded in
 /// [`ResponseEstimationDiagnostics`]; the median rather than the mean so one bright outlier (a vessel, a mis-selected
 /// CSF voxel) cannot shift the reference the whole scan is expressed against.
 fn median_b0(dwi: &DwiData, voxels: &[&Voxel], b0_thr: f64) -> f64 {
@@ -584,7 +584,7 @@ pub fn format_response_txt(response: &TissueResponse) -> String {
     for row in &response.coeffs {
         // Match MRtrix's `dwi2response` formatting: 15-significant-digits,
         // shortest-by-precision rather than scientific. Rust's `{:e}` is
-        // scientific; `{:.15}` is fixed; the closest analogue to `%.15g`
+        // scientific; `{:.15}` is fixed; the closest analog to `%.15g`
         // is to format both and pick the shorter — but for our use case
         // the responses are O(10²)–O(10³) scale, so fixed at 15 digits
         // after decimal is fine and parseable by MRtrix.
@@ -616,7 +616,7 @@ mod tests {
 
     #[test]
     fn zonal_sh_fit_recovers_planted_coefficients() {
-        // Plant `r = [r₀, r₂, r₄]`, synthesise amplitudes at random cos_angles,
+        // Plant `r = [r₀, r₂, r₄]`, synthesize amplitudes at random cos_angles,
         // then re-fit; check the recovered coefficients match.
         let lmax = 4;
         let r_true = [1.5_f64, -0.8, 0.3];

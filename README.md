@@ -5,12 +5,12 @@ diffusion MRI data, written in Rust with a Python interface. It provides:
 
 - image quality control: neighboring DWI correlation, a DWI contrast ratio,
   within-volume outlier-slice detection and a fixel-coherence index;
-- 3D-SHORE reconstruction with L1-regularised (compressed-sensing), L2 or
+- 3D-SHORE reconstruction with L1-regularized (compressed-sensing), L2 or
   non-negativity-constrained fitting, with orientation distribution functions,
-  fibre peaks, propagator-derived scalars and signal synthesis;
+  fiber peaks, propagator-derived scalars and signal synthesis;
 - robust diffusion tensor estimation (RESTORE);
 - single-shell three-tissue constrained spherical deconvolution, including
-  response-function estimation and multi-tissue intensity normalisation.
+  response-function estimation and multi-tissue intensity normalization.
 
 Orientation outputs are written in the [ODX](https://github.com/PennLINC/odx-rs)
 format. The command-line tools and the Python interface share one
@@ -63,13 +63,13 @@ cs-fit --dwi dwi.nii.gz --bval dwi.bval --bvec dwi.bvec --mask mask.nii.gz \
 | `cs-dti` | RESTORE diffusion tensor fit |
 | `cs-response` | Three-tissue response-function estimation |
 | `cs-ss3t` | Single-shell three-tissue CSD |
-| `cs-mtnorm` | Multi-tissue intensity normalisation |
-| `cs-ss3t-full` | Response estimation, SS3T-CSD and normalisation in one step |
+| `cs-mtnorm` | Multi-tissue intensity normalization |
+| `cs-ss3t-full` | Response estimation, SS3T-CSD and normalization in one step |
 
-## Licence
+## License
 
-cs_dmri is available under either the MIT licence or the Apache License 2.0, at
+cs_dmri is available under either the MIT license or the Apache License 2.0, at
 your option, except for two files derived from MRtrix3 (Mozilla Public License
 2.0) and functions adapted from dipy (BSD 3-Clause). See the
-[licence page](https://cs-dmri.readthedocs.io/en/latest/license.html) and the
+[license page](https://cs-dmri.readthedocs.io/en/latest/license.html) and the
 `LICENSE-*` files.

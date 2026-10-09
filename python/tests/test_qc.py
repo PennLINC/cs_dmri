@@ -8,7 +8,7 @@ from cs_dmri import _cs_dmri
 
 from _dipy_reference import dwi_contrast as ref_contrast
 from _dipy_reference import find_qspace_contrast as ref_contrast_pairs
-from conftest import fibre_series
+from conftest import fiber_series
 
 
 def test_ndc_matches_dipy(series):
@@ -64,7 +64,7 @@ def test_ndc_is_order_invariant(series):
 
 
 def test_outlier_slices_find_dropout():
-    data, bvals, bvecs = fibre_series(shape=(24, 24, 16))
+    data, bvals, bvecs = fiber_series(shape=(24, 24, 16))
     # smooth anatomy along z so adjacent slices predict each other
     z = np.linspace(0, 1, 16)[None, None, :, None]
     data = data * (1 + 0.2 * z)

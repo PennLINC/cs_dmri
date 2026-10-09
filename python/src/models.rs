@@ -28,7 +28,7 @@ fn put<'py, T: numpy::Element, D: numpy::ndarray::Dimension>(
     d.set_item(k, a.into_pyarray_bound(d.py()))
 }
 
-/// Unit 3×3 rotation of an affine (columns normalised), the matrix the CLI
+/// Unit 3×3 rotation of an affine (columns normalized), the matrix the CLI
 /// uses to rotate image-axis bvecs into world RAS.
 #[pyfunction]
 pub fn affine_rotation<'py>(py: Python<'py>, affine: PyReadonlyArray2<'py, f64>) -> PyResult<Bound<'py, PyArray2<f64>>> {
@@ -570,7 +570,7 @@ pub fn ss3t_fit<'py>(
     Ok(d)
 }
 
-/// Multi-tissue log-domain intensity normalisation (MRtrix3 `mtnormalise`
+/// Multi-tissue log-domain intensity normalization (MRtrix3 `mtnormalise`
 /// port). `target_sum=None` uses the median observed sum. Returns new
 /// `(wm, gm, csf, diagnostics)`; inputs are not modified.
 #[pyfunction]

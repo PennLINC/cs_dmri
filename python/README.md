@@ -25,5 +25,5 @@ ss3t = cs.ss3t_pipeline(dwi)                    # single-shell three-tissue CSD
 
 Documentation: <https://cs-dmri.readthedocs.io>
 
-Licence: `(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause`; see the
+License: `(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause`; see the
 documentation for details.

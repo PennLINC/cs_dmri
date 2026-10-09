@@ -3,7 +3,7 @@
 //!
 //! Chains [`cs-response`](../cs-response.rs), [`cs-ss3t`](../cs-ss3t.rs), and
 //! [`cs-mtnorm`](../cs-mtnorm.rs) so a single invocation goes from raw
-//! single-shell DWI to normalised WM/GM/CSF tissue maps without any
+//! single-shell DWI to normalized WM/GM/CSF tissue maps without any
 //! external MRtrix tooling.
 //!
 //! Stages can be skipped:
@@ -42,7 +42,7 @@ use cs_dmri::{
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "Single-shell three-tissue pipeline: response function estimation, SS3T-CSD and multi-tissue intensity normalisation"
+    about = "Single-shell three-tissue pipeline: response function estimation, SS3T-CSD and multi-tissue intensity normalization"
 )]
 struct Cli {
     /// 4D DWI NIfTI input (b=0 volumes and one diffusion-weighted shell).
@@ -59,11 +59,11 @@ struct Cli {
     #[arg(long)]
     mask: Option<PathBuf>,
 
-    /// Output white matter FOD NIfTI, normalised unless `--no-normalize` is
+    /// Output white matter FOD NIfTI, normalized unless `--no-normalize` is
     /// given. Required unless `--odx` is given.
     #[arg(long)]
     output_wm: Option<PathBuf>,
-    /// Output grey matter compartment NIfTI. Required unless `--odx` is
+    /// Output gray matter compartment NIfTI. Required unless `--odx` is
     /// given.
     #[arg(long)]
     output_gm: Option<PathBuf>,
@@ -72,7 +72,7 @@ struct Cli {
     output_csf: Option<PathBuf>,
 
     /// Write a single ODX file containing the white matter SH coefficients,
-    /// the grey matter and CSF compartments (under `sh/`), the brain mask,
+    /// the gray matter and CSF compartments (under `sh/`), the brain mask,
     /// the response functions (in the header) and white matter peaks. The
     /// NIfTI outputs are then not written. A path with a `.odx` extension is
     /// written as a zip archive; any other path is written as a directory.
@@ -83,7 +83,7 @@ struct Cli {
     /// `--response-{wm,gm,csf}` are given, response estimation is skipped.
     #[arg(long, requires = "response_gm", requires = "response_csf")]
     response_wm: Option<PathBuf>,
-    /// Grey matter response in MRtrix `.txt` format (see --response-wm).
+    /// Gray matter response in MRtrix `.txt` format (see --response-wm).
     #[arg(long)]
     response_gm: Option<PathBuf>,
     /// CSF response in MRtrix `.txt` format (see --response-wm).
@@ -96,7 +96,7 @@ struct Cli {
     #[arg(long)]
     write_responses_to: Option<PathBuf>,
 
-    /// Do not apply multi-tissue intensity normalisation; the SS3T-CSD
+    /// Do not apply multi-tissue intensity normalization; the SS3T-CSD
     /// outputs are written as fitted.
     #[arg(long)]
     no_normalize: bool,
@@ -106,16 +106,16 @@ struct Cli {
     /// selection. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 3)]
     dh_erode: usize,
-    /// FA threshold for the initial separation of white matter from grey
+    /// FA threshold for the initial separation of white matter from gray
     /// matter and CSF. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.2)]
     dh_fa: f64,
-    /// Number of single-fibre white matter voxels selected, as a percentage of
+    /// Number of single-fiber white matter voxels selected, as a percentage of
     /// the refined white matter. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.5)]
     dh_sfwm: f64,
-    /// Number of grey matter voxels selected, as a percentage of the refined
-    /// grey matter. Not used with --legacy-tissue-selection.
+    /// Number of gray matter voxels selected, as a percentage of the refined
+    /// gray matter. Not used with --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.0)]
     dh_gm: f64,
     /// Number of CSF voxels selected, as a percentage of the refined CSF. Not
@@ -124,18 +124,18 @@ struct Cli {
     dh_csf: f64,
     /// Use the earlier threshold-based tissue selection instead of the staged
     /// selection based on a signal decay metric. CSF voxels are those in the
-    /// top --md-csf-pct percent of MD; single-fibre white matter voxels have
+    /// top --md-csf-pct percent of MD; single-fiber white matter voxels have
     /// FA above --fa-wm-threshold and eigenvalue ratio above
-    /// --fiber-dominance-ratio; the remaining voxels are grey matter. The CSF
+    /// --fiber-dominance-ratio; the remaining voxels are gray matter. The CSF
     /// class selected in this way can include partial-volume voxels.
     #[arg(long)]
     legacy_tissue_selection: bool,
 
-    /// FA above which a voxel is a single-fibre white matter candidate. Used
+    /// FA above which a voxel is a single-fiber white matter candidate. Used
     /// only with --legacy-tissue-selection.
     #[arg(long, default_value_t = 0.7)]
     fa_wm_threshold: f64,
-    /// Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fibre white
+    /// Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fiber white
     /// matter voxel; 0 disables the test. Used only with
     /// --legacy-tissue-selection.
     #[arg(long, default_value_t = 2.0)]
@@ -158,11 +158,11 @@ struct Cli {
     lmax_wm: usize,
 
     // ---- mtnormalise knobs ----
-    /// Order of the polynomial bias field model in the normalisation step
+    /// Order of the polynomial bias field model in the normalization step
     /// (order 3 has 20 terms).
     #[arg(long, default_value_t = 3)]
     mtnorm_poly_order: usize,
-    /// In the normalisation step, use the median of the observed sums of l=0
+    /// In the normalization step, use the median of the observed sums of l=0
     /// coefficients as the target instead of 1/√(4π). The global scale of
     /// the input is preserved.
     #[arg(long)]

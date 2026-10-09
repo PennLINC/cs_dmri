@@ -61,7 +61,7 @@ The two tests answer two distinct questions:
     *same* MRtrix pipeline, recover gold?**
     cs-fit on HASC → cs-synth onto ABCD's gradient table → MRtrix MSMT-CSD →
     fixels. Both sides of this comparison go through identical MRtrix code,
-    so any "fixel extraction style" difference is cancelled out — what
+    so any "fixel extraction style" difference is canceled out — what
     remains is purely *signal-prediction quality*. If `roundtrip ≈ direct`,
     cs's signal model is the bottleneck. If `roundtrip ≪ direct`, cs's
     in-house fixel extraction is contributing the bulk of the error.
@@ -180,7 +180,7 @@ The headline numbers — what to look at first.
 ```{r per_config_table}
 agg <- scalars |>
   group_by(config, tag) |>
-  summarise(
+  summarize(
     n              = n(),
     mean_angle_med = median(mean_match_angle),
     matched_frac   = median(matched_frac),

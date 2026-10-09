@@ -3,7 +3,7 @@
 //!
 //! Houses the SS3T (Single-Shell 3-Tissue) algorithm — WM FOD + GM + CSF fit
 //! to a single-shell DWI by an alternating two-tissue fixed point — together
-//! with response estimation and multi-tissue intensity normalisation.
+//! with response estimation and multi-tissue intensity normalization.
 
 pub mod dhollander;
 pub mod forward;

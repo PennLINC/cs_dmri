@@ -6,14 +6,14 @@ provides:
 
 - **Image quality control**: neighboring DWI correlation, a DWI contrast ratio,
   within-volume outlier-slice detection and a fixel-coherence index.
-- **3D-SHORE reconstruction** with L1-regularised (compressed-sensing), L2 or
+- **3D-SHORE reconstruction** with L1-regularized (compressed-sensing), L2 or
   non-negativity-constrained fitting, from which orientation distribution
-  functions, fibre peaks, propagator-derived scalars and synthesised signals
+  functions, fiber peaks, propagator-derived scalars and synthesized signals
   are computed.
 - **Diffusion tensor estimation** with the RESTORE algorithm.
 - **Single-shell three-tissue constrained spherical deconvolution** (SS3T-CSD),
   including unsupervised response-function estimation and multi-tissue
-  intensity normalisation.
+  intensity normalization.
 
 Orientation outputs are written in the [ODX](https://github.com/PennLINC/odx-rs)
 format. The command-line tools and the Python interface share one

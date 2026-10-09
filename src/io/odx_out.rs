@@ -54,7 +54,7 @@ const PEAK_MIN_SEP_DEG: f32 = 25.0;
 
 /// Per-fixel dispersion (MRtrix `fod2fixel -disp`): FMLS lobe integral ÷ lobe
 /// peak amplitude, evaluated on the same DSI-Studio ODF8 hemisphere the peak
-/// finder samples — small for a tight single-fibre lobe, large for a fanning
+/// finder samples — small for a tight single-fiber lobe, large for a fanning
 /// one. Both terms scale linearly with the fODF, so the ratio is unchanged by
 /// QA normalization or absolute-scale rescaling and means the same thing on
 /// every output scale.
@@ -147,7 +147,7 @@ impl DispersionSegmenter<'_> {
 }
 
 /// Match one refined peak direction to its lobe and return that lobe's
-/// dispersion. The vertex nearest the direction (by |dot|, honouring antipodal
+/// dispersion. The vertex nearest the direction (by |dot|, honoring antipodal
 /// symmetry) carries the watershed assignment itself, so this is exact rather
 /// than an angular heuristic. Falls back to the best-aligned lobe peak for the
 /// rare refined direction whose nearest vertex sampled to zero amplitude (and
@@ -515,24 +515,24 @@ fn floats_to_le_bytes(xs: &[f32]) -> Vec<u8> {
 /// supersedes this scalar for cross-subject comparability. The recipe "multiply by
 /// `REFERENCE_B0_TARGET_INTENSITY / ReferenceB0Signal`" is therefore only valid
 /// for quantities still in raw scanner units (the DWI itself, or an
-/// unnormalised fit); applying it to a post-`mtnormalise` fODF would
-/// double-normalise.
+/// unnormalized fit); applying it to a post-`mtnormalise` fODF would
+/// double-normalize.
 pub const REFERENCE_B0_TARGET_INTENSITY: f64 = 1000.0;
 
 /// How the white-matter mask used for `ReferenceB0Signal` was defined.
 ///
 /// mrtrix3's `dwinormalise` offers two: a group FA template thresholded at 0.4,
-/// or a user-supplied mask. These are the continuous-b analogues,
+/// or a user-supplied mask. These are the continuous-b analogs,
 /// most-preferred first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReferenceB0Source {
-    /// Mask supplied by the caller — the direct analogue of
+    /// Mask supplied by the caller — the direct analog of
     /// `dwinormalise individual`, and the closest match to mrtrix3 because the
     /// mask definition is identical by construction.
     UserMask,
-    /// The Dhollander single-fibre WM voxels the response was estimated from.
+    /// The Dhollander single-fiber WM voxels the response was estimated from.
     /// Stricter than mrtrix3's FA > 0.4: the Dhollander selection additionally gates on an
-    /// eigenvalue-ratio single-fibre criterion, so this samples a purer WM
+    /// eigenvalue-ratio single-fiber criterion, so this samples a purer WM
     /// population. Available only when responses are estimated, not read.
     WhiteMatterSingleFibre,
     /// Voxels where the fitted WM compartment dominates the tissue sum.
@@ -559,7 +559,7 @@ impl ReferenceB0Source {
 /// QST Eq. (4) only needs `AFD_ref / DWI_ref` to be *identical across
 /// subjects*, and the pipeline delivers that by construction: the shared
 /// group response fixes `AFD_ref`, and the final `mtnormalise` re-pins the fODF
-/// scale, playing the role of `DWI_ref` equalisation. These fields are
+/// scale, playing the role of `DWI_ref` equalization. These fields are
 /// therefore provenance and QC — they record what the scan's raw scale *was*
 /// (e.g. to track receiver-gain drift across sessions) — not inputs any
 /// downstream computation requires. Nothing downstream can reconstruct them
@@ -574,11 +574,11 @@ pub struct ContinuousBQuantMeta {
     /// The per-scan `DWI_ref`: median b=0 within a white-matter mask, paired
     /// with a label describing how that mask was defined.
     ///
-    /// The statistic mirrors mrtrix3's `dwinormalise`, which normalises "the
+    /// The statistic mirrors mrtrix3's `dwinormalise`, which normalizes "the
     /// median b=0 white matter value" — `mrstats -output median` over the
     /// mean-b=0 image within a WM mask (`lib/mrtrix3/dwinormalise/`). mrtrix3
     /// derives that mask from an FA template thresholded at 0.4 (`group`) or
-    /// takes it from the user (`individual`); the label records which analogue
+    /// takes it from the user (`individual`); the label records which analog
     /// was used here. See [`REFERENCE_B0_TARGET_INTENSITY`] for the value
     /// mrtrix3 scales this to.
     ///
@@ -589,7 +589,7 @@ pub struct ContinuousBQuantMeta {
     /// Global-gain summary of the multiplier `mtnormalise` actually applied:
     /// `1 / lognorm_scale`, i.e. `exp(-mean(log f))` over the final inlier
     /// voxels (the bias field's spatially-varying part averages out). The
-    /// reciprocal of mrtrix3's `lognorm_scale` header entry, and the analogue
+    /// reciprocal of mrtrix3's `lognorm_scale` header entry, and the analog
     /// of the `-scale` output of mrtrix3 dev's `dwinormalise mtnorm`. Together with
     /// `ReferenceB0Signal` this makes the full raw→stored scale chain
     /// auditable from the sidecar alone: stored ≈ raw × this value in a
@@ -641,12 +641,12 @@ fn bids_json(
     let voxel_size_mm = [vox(0), vox(1), vox(2)];
     let mut root = serde_json::json!({
         "Description": if meta.quantitative {
-            "White matter fibre orientation distribution from continuous-b \
+            "White matter fiber orientation distribution from continuous-b \
              multi-tissue constrained spherical deconvolution, in absolute \
-             signal units suitable for apparent fibre density (AFD) and SIFT2 \
+             signal units suitable for apparent fiber density (AFD) and SIFT2 \
              quantification."
         } else {
-            "White matter fibre orientation distribution from continuous-b \
+            "White matter fiber orientation distribution from continuous-b \
              multi-tissue constrained spherical deconvolution, normalized \
              per voxel by the b=0 signal. NOT in AFD units: see FODScaling."
         },
@@ -664,7 +664,7 @@ fn bids_json(
         // signal (and hence to intra-axonal volume at high b), which is what AFD
         // and SIFT2 require. "PerVoxelB0" => amplitude is a fraction of each
         // voxel's own b=0, which both Smith 2022 and Dhollander 2021 rule out for
-        // fibre density analysis.
+        // fiber density analysis.
         "FODScaling": if meta.quantitative { "Absolute" } else { "PerVoxelB0" },
         "QuantitativeFODScaling": meta.quantitative,
         "VoxelSizeMM": voxel_size_mm.to_vec(),
@@ -1389,7 +1389,7 @@ mod tests {
     }
 
     /// Non-quantitative output must say so unambiguously: a consumer that treats
-    /// per-voxel-b0-normalized fODFs as AFD gets silently wrong fibre density.
+    /// per-voxel-b0-normalized fODFs as AFD gets silently wrong fiber density.
     #[test]
     fn bids_json_flags_non_quantitative_output_and_omits_absent_terms() {
         let meta = ContinuousBQuantMeta {
@@ -1434,7 +1434,7 @@ mod tests {
         assert_eq!(j["ReferenceB0Signal"], serde_json::json!(1234.5));
         assert_eq!(j["IntensityNormalizationTarget"], serde_json::json!(0.2821));
 
-        // A normalised bundle whose scale is unknown is not fully auditable —
+        // A normalized bundle whose scale is unknown is not fully auditable —
         // the target-only case still says "mtnormalise" but omits the scale.
         let meta = ContinuousBQuantMeta {
             intensity_normalization_scale: None,
@@ -1458,7 +1458,7 @@ mod tests {
     /// A lobe `|d·axis|^p` with `axis` an exact sphere vertex has unit peak
     /// and integral `4π/(p+1)`, so per-fixel dispersion is known analytically.
     /// Sweeping the axis over every hemisphere vertex is the load-bearing
-    /// part: a lobe centred near the antipodal rim gets severed (integral
+    /// part: a lobe centered near the antipodal rim gets severed (integral
     /// halved → dispersion halved) if the adjacency fails to wrap, and an
     /// orientation-dependent quadrature bias would surface as outliers at
     /// specific axes. Neither failure is visible at any single "nice" axis.
@@ -1530,7 +1530,7 @@ mod tests {
         );
         // Watershed splits the crossing region between the lobes, so the
         // single-lobe analytic values hold only loosely — but each fixel must
-        // still land near its own lobe's value, not its neighbour's.
+        // still land near its own lobe's value, not its neighbor's.
         let e_sharp = 4.0 * std::f32::consts::PI / 17.0;
         let e_broad = 4.0 * std::f32::consts::PI / 5.0;
         assert!((sharp - e_sharp).abs() < 0.25 * e_sharp, "sharp {sharp} vs {e_sharp}");

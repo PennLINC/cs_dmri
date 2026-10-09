@@ -59,11 +59,11 @@ struct Cli {
     #[arg(long)]
     no_anisotropic_power: bool,
 
-    /// Normalisation factor in the logarithm of the anisotropic power map.
+    /// Normalization factor in the logarithm of the anisotropic power map.
     #[arg(long, default_value_t = ANISOTROPIC_POWER_NORM_FACTOR)]
     ap_norm_factor: f64,
 
-    /// Do not apply global ODF normalisation. By default the quantity
+    /// Do not apply global ODF normalization. By default the quantity
     /// QA = max(ODF) − min(ODF) is computed in each voxel, and all SH
     /// coefficients are divided by its maximum over the mask, as in DSI
     /// Studio. Relative amplitudes between voxels are preserved.

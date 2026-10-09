@@ -8,9 +8,9 @@ Metrics (see :func:`column_descriptions` for full definitions):
 
 ``ndc`` / ``ndc_masked``
     Neighboring DWI correlation: mean correlation of each b>0 volume with its
-    nearest q-space neighbour. Below 0.4 flags a low-quality image.
+    nearest q-space neighbor. Below 0.4 flags a low-quality image.
 ``dwi_contrast_ratio`` / ``dwi_contrast_ratio_masked``
-    Neighbour correlation ÷ correlation with the most nearly perpendicular
+    Neighbor correlation ÷ correlation with the most nearly perpendicular
     volume. Below 1.1 poor, 1.1–1.3 fair, above 1.3 good. Mask-sensitive.
 ``n_outlier_slices``
     Slices that don't lie between their two adjacent slices in the same volume.
@@ -142,11 +142,11 @@ def _b0(gtab, b0_threshold):
 
 
 def neighboring_dwi_correlation(data, gtab, mask=None, *, b0_threshold=None, n_threads=None):
-    """Mean correlation of each b>0 volume with its nearest q-space neighbour.
+    """Mean correlation of each b>0 volume with its nearest q-space neighbor.
 
     Every diffusion-weighted volume contributes one term, so the value does not
-    depend on volume order; neighbours are antipodally symmetric. ``None`` if no
-    volume has a neighbour.
+    depend on volume order; neighbors are antipodally symmetric. ``None`` if no
+    volume has a neighbor.
     """
     gtab = as_gradient_table(gtab)
     vol = as_volume(data)
@@ -156,7 +156,7 @@ def neighboring_dwi_correlation(data, gtab, mask=None, *, b0_threshold=None, n_t
 
 
 def dwi_contrast_ratio(data, gtab, mask=None, *, b0_threshold=None, n_threads=None):
-    """Mean neighbour correlation ÷ mean correlation with each volume's most
+    """Mean neighbor correlation ÷ mean correlation with each volume's most
     nearly perpendicular q-space volume. ``None`` if undefined."""
     gtab = as_gradient_table(gtab)
     vol = as_volume(data)

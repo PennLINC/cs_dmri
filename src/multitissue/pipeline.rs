@@ -31,7 +31,7 @@ pub struct Ss3tPipelineConfig {
     pub responses: ResponseSource,
     pub ss3t: Ss3tConfig,
     pub compute_diagnostics: bool,
-    /// `None` skips intensity normalisation.
+    /// `None` skips intensity normalization.
     pub normalize: Option<MtnormaliseConfig>,
 }
 
@@ -62,7 +62,7 @@ impl PipelineObserver for NoProgress {}
 
 /// Output of [`ss3t_pipeline`].
 pub struct Ss3tPipelineResult {
-    /// Tissue maps (normalised when `normalize` was set) and diagnostics.
+    /// Tissue maps (normalized when `normalize` was set) and diagnostics.
     pub fit: Ss3tVolumeResult,
     /// The responses the fit used.
     pub responses: Ss3tResponses,

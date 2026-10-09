@@ -20,16 +20,16 @@ use nifti::writer::WriterOptions;
 use odx_rs::reference_affine::read_reference_affine;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Synthesise diffusion-weighted images from SHORE coefficients for a given gradient table")]
+#[command(version, about = "Synthesize diffusion-weighted images from SHORE coefficients for a given gradient table")]
 struct Cli {
     /// Coefficient NIfTI written by `cs-fit`. The JSON sidecar is read from the
     /// matching `.json` file next to it.
     #[arg(long)]
     coeffs: PathBuf,
-    /// FSL bval file of the gradient table to synthesise.
+    /// FSL bval file of the gradient table to synthesize.
     #[arg(long)]
     bval: PathBuf,
-    /// FSL bvec file of the gradient table to synthesise.
+    /// FSL bvec file of the gradient table to synthesize.
     #[arg(long)]
     bvec: PathBuf,
     /// Diffusion time Δ (big delta), in seconds. If omitted, the value in the

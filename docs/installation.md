@@ -34,8 +34,8 @@ The executables are placed in `target/release/`:
 | `cs-dti` | RESTORE diffusion tensor fit |
 | `cs-response` | Three-tissue response-function estimation |
 | `cs-ss3t` | SS3T-CSD with given responses |
-| `cs-mtnorm` | Multi-tissue intensity normalisation |
-| `cs-ss3t-full` | Response estimation, SS3T-CSD and normalisation in one step |
+| `cs-mtnorm` | Multi-tissue intensity normalization |
+| `cs-ss3t-full` | Response estimation, SS3T-CSD and normalization in one step |
 
 Building requires a C compiler and CMake 3.26 or later, used by a dependency of
 the ODX library.

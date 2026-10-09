@@ -108,7 +108,7 @@ impl DtiVoxelResult {
     }
 }
 
-/// Build the design matrix `X` for the linearised log-domain DTI model.
+/// Build the design matrix `X` for the linearized log-domain DTI model.
 ///
 /// ```text
 ///   log S_i ≈ log S₀  −  b_i · gᵢᵀ D gᵢ
@@ -274,10 +274,10 @@ pub fn fit_voxel_restore(
 }
 
 /// Solve the weighted normal equations `(XᵀWX + εI) θ = XᵀWy` via Cholesky.
-/// The `εI` term stabilises the factorisation when weights span many orders
+/// The `εI` term stabilizes the factorization when weights span many orders
 /// of magnitude (typical for noisy clinical data — and required for the
 /// RESTORE iteration where outlier weights collapse to zero). Returns
-/// `None` if even the regularised system isn't PD.
+/// `None` if even the regularized system isn't PD.
 fn solve_wls(
     design: &DMatrix<f64>,
     log_signal: &DVector<f64>,
@@ -285,7 +285,7 @@ fn solve_wls(
 ) -> Option<DVector<f64>> {
     let n = log_signal.len();
     let p = design.ncols();
-    // Form W·X without materialising W: row i of WX = w_i · row i of X.
+    // Form W·X without materializing W: row i of WX = w_i · row i of X.
     let mut wx = DMatrix::<f64>::zeros(n, p);
     for i in 0..n {
         let w = weights[i];

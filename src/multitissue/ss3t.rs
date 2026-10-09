@@ -27,7 +27,7 @@ pub enum LmaxWmStrategy {
     /// of 8). Fastest; one inner solve sweep per voxel.
     Fixed(usize),
     /// Per-voxel: fit at every lmax in `candidates`, pick the lmax that
-    /// minimises BIC = `n·log(rss/n) + k·log(n)` where k is the count of
+    /// minimizes BIC = `n·log(rss/n) + k·log(n)` where k is the count of
     /// fitted coefficients. Mirrors `cs-fit --alpha-mode path-bic` but for
     /// SH order rather than L1 weight. CSF/GM voxels auto-select lmax=0
     /// (cheap; trivial inner CSD); only fiber-rich WM benefits from lmax=8.
@@ -117,7 +117,7 @@ pub struct Ss3tVoxelDiagnostics {
 ///
 /// Building the plan does the bulk of the per-volume work: response scaling,
 /// shell partitioning, SH-evaluation matrices on each shell and on the
-/// non-negativity sphere, three Cholesky factorisations (one per inner CSD
+/// non-negativity sphere, three Cholesky factorizations (one per inner CSD
 /// problem), and predictor blocks for forward subtraction.
 pub struct Ss3tPlan {
     /// Number of augmented signal rows (== n_grads — we don't reorder, only weight).
@@ -372,7 +372,7 @@ pub fn fit_voxel_into(
     let mut total_iter = 0usize;
     let mut all_converged = true;
 
-    // Initialise GM+CSF.
+    // Initialize GM+CSF.
     let (init, diag) = plan.icls_gm_csf.solve_into(&ws.wdwi, &mut ws.icls_gm_csf);
     total_iter += diag.iterations;
     all_converged &= diag.converged;
@@ -513,7 +513,7 @@ pub struct Ss3tVoxelResult {
     pub diagnostics: Ss3tVoxelDiagnostics,
 }
 
-/// Fit every candidate lmax for one voxel, pick the BIC-minimising fit. For
+/// Fit every candidate lmax for one voxel, pick the BIC-minimizing fit. For
 /// `LmaxWmStrategy::Fixed`, only one candidate exists — equivalent to
 /// `fit_voxel_into` plus a BIC computation.
 ///

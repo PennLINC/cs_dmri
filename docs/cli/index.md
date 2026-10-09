@@ -9,10 +9,10 @@ Each page reproduces the tool's `--help` output.
 | [`cs-odf`](cs-odf.md) | Computes ODF spherical-harmonic coefficients, peaks and scalars from `cs-fit` coefficients and writes an ODX file. |
 | [`cs-synth`](cs-synth.md) | Synthesizes a DWI series for a target gradient table from `cs-fit` coefficients. |
 | [`cs-dti`](cs-dti.md) | Fits the diffusion tensor with RESTORE. |
-| [`cs-response`](cs-response.md) | Estimates white-matter, grey-matter and cerebrospinal-fluid response functions from single-shell data. |
+| [`cs-response`](cs-response.md) | Estimates white-matter, gray-matter and cerebrospinal-fluid response functions from single-shell data. |
 | [`cs-ss3t`](cs-ss3t.md) | Single-shell three-tissue CSD with given response functions. |
-| [`cs-mtnorm`](cs-mtnorm.md) | Multi-tissue intensity normalisation of tissue maps. |
-| [`cs-ss3t-full`](cs-ss3t-full.md) | Response estimation, SS3T-CSD and intensity normalisation in one step. |
+| [`cs-mtnorm`](cs-mtnorm.md) | Multi-tissue intensity normalization of tissue maps. |
+| [`cs-ss3t-full`](cs-ss3t-full.md) | Response estimation, SS3T-CSD and intensity normalization in one step. |
 
 ```{toctree}
 :hidden:

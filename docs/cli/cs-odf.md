@@ -32,12 +32,12 @@ Options:
           Do not compute the per-voxel anisotropic power map (Dell'Acqua et al., 2014)
 
       --ap-norm-factor <AP_NORM_FACTOR>
-          Normalisation factor in the logarithm of the anisotropic power map
+          Normalization factor in the logarithm of the anisotropic power map
           
           [default: 0.00001]
 
       --no-global-normalize
-          Do not apply global ODF normalisation. By default the quantity QA = max(ODF) − min(ODF) is computed in each voxel, and all SH coefficients are divided by its maximum over the mask, as in DSI Studio. Relative amplitudes between voxels are preserved
+          Do not apply global ODF normalization. By default the quantity QA = max(ODF) − min(ODF) is computed in each voxel, and all SH coefficients are divided by its maximum over the mask, as in DSI Studio. Relative amplitudes between voxels are preserved
 
       --no-diagnostic-dpvs
           Do not copy the diagnostic maps written by `cs-fit --diagnostics` (`<stem>_r2.nii.gz`, `<stem>_rmse.nii.gz`, `<stem>_alpha.nii.gz`, `<stem>_bic.nii.gz`, `<stem>_sparsity.nii.gz`) into the ODX. By default, each of these found next to the coefficient NIfTI is stored as a per-voxel field

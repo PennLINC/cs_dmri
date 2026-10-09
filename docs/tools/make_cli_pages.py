@@ -21,11 +21,11 @@ TOOLS = {
     "cs-synth": "Synthesizes a DWI series for a target gradient table from `cs-fit` coefficients. "
                 "See {doc}`../user/shore`.",
     "cs-dti": "Fits the diffusion tensor with RESTORE. See {doc}`../user/dti`.",
-    "cs-response": "Estimates white-matter, grey-matter and cerebrospinal-fluid response functions from "
+    "cs-response": "Estimates white-matter, gray-matter and cerebrospinal-fluid response functions from "
                    "single-shell data. See {doc}`../user/multitissue`.",
     "cs-ss3t": "Single-shell three-tissue CSD with given response functions. See {doc}`../user/multitissue`.",
-    "cs-mtnorm": "Multi-tissue intensity normalisation of tissue maps. See {doc}`../user/multitissue`.",
-    "cs-ss3t-full": "Response estimation, SS3T-CSD and intensity normalisation in one step. "
+    "cs-mtnorm": "Multi-tissue intensity normalization of tissue maps. See {doc}`../user/multitissue`.",
+    "cs-ss3t-full": "Response estimation, SS3T-CSD and intensity normalization in one step. "
                     "See {doc}`../user/multitissue`.",
 }
 

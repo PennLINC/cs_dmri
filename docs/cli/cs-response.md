@@ -1,9 +1,9 @@
 # cs-response
 
-Estimates white-matter, grey-matter and cerebrospinal-fluid response functions from single-shell data. See {doc}`../user/multitissue`.
+Estimates white-matter, gray-matter and cerebrospinal-fluid response functions from single-shell data. See {doc}`../user/multitissue`.
 
 ```text
-Estimate white matter, grey matter and CSF response functions (Dhollander et al., 2016)
+Estimate white matter, gray matter and CSF response functions (Dhollander et al., 2016)
 
 Usage: cs-response [OPTIONS] --dwi <DWI> --bval <BVAL> --bvec <BVEC> --output-wm <OUTPUT_WM> --output-gm <OUTPUT_GM> --output-csf <OUTPUT_CSF>
 
@@ -21,10 +21,10 @@ Options:
           Brain mask NIfTI. If omitted, a mask is computed by thresholding the mean b=0 image
 
       --output-wm <OUTPUT_WM>
-          Output single-fibre white matter response (MRtrix `.txt` format)
+          Output single-fiber white matter response (MRtrix `.txt` format)
 
       --output-gm <OUTPUT_GM>
-          Output grey matter response (MRtrix `.txt` format, one column)
+          Output gray matter response (MRtrix `.txt` format, one column)
 
       --output-csf <OUTPUT_CSF>
           Output CSF response (MRtrix `.txt` format, one column)
@@ -35,17 +35,17 @@ Options:
           [default: 3]
 
       --dh-fa <DH_FA>
-          FA threshold for the initial separation of white matter from grey matter and CSF. Not used with --legacy-tissue-selection
+          FA threshold for the initial separation of white matter from gray matter and CSF. Not used with --legacy-tissue-selection
           
           [default: 0.2]
 
       --dh-sfwm <DH_SFWM>
-          Number of single-fibre white matter voxels selected, as a percentage of the refined white matter. Not used with --legacy-tissue-selection
+          Number of single-fiber white matter voxels selected, as a percentage of the refined white matter. Not used with --legacy-tissue-selection
           
           [default: 0.5]
 
       --dh-gm <DH_GM>
-          Number of grey matter voxels selected, as a percentage of the refined grey matter. Not used with --legacy-tissue-selection
+          Number of gray matter voxels selected, as a percentage of the refined gray matter. Not used with --legacy-tissue-selection
           
           [default: 2]
 
@@ -55,15 +55,15 @@ Options:
           [default: 10]
 
       --legacy-tissue-selection
-          Use the earlier threshold-based tissue selection instead of the staged selection based on a signal decay metric. CSF voxels are those in the top --md-csf-pct percent of MD; single-fibre white matter voxels have FA above --fa-wm-threshold and eigenvalue ratio above --fiber-dominance-ratio; the remaining voxels are grey matter. The CSF class selected in this way can include partial-volume voxels
+          Use the earlier threshold-based tissue selection instead of the staged selection based on a signal decay metric. CSF voxels are those in the top --md-csf-pct percent of MD; single-fiber white matter voxels have FA above --fa-wm-threshold and eigenvalue ratio above --fiber-dominance-ratio; the remaining voxels are gray matter. The CSF class selected in this way can include partial-volume voxels
 
       --fa-wm-threshold <FA_WM_THRESHOLD>
-          FA above which a voxel is a single-fibre white matter candidate. Used only with --legacy-tissue-selection
+          FA above which a voxel is a single-fiber white matter candidate. Used only with --legacy-tissue-selection
           
           [default: 0.7]
 
       --fiber-dominance-ratio <FIBER_DOMINANCE_RATIO>
-          Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fibre white matter voxel; 0 disables the test. Used only with --legacy-tissue-selection
+          Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fiber white matter voxel; 0 disables the test. Used only with --legacy-tissue-selection
           
           [default: 2]
 

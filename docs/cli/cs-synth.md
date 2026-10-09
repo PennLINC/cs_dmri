@@ -3,7 +3,7 @@
 Synthesizes a DWI series for a target gradient table from `cs-fit` coefficients. See {doc}`../user/shore`.
 
 ```text
-Synthesise diffusion-weighted images from SHORE coefficients for a given gradient table
+Synthesize diffusion-weighted images from SHORE coefficients for a given gradient table
 
 Usage: cs-synth [OPTIONS] --coeffs <COEFFS> --bval <BVAL> --bvec <BVEC> --output <OUTPUT>
 
@@ -12,10 +12,10 @@ Options:
           Coefficient NIfTI written by `cs-fit`. The JSON sidecar is read from the matching `.json` file next to it
 
       --bval <BVAL>
-          FSL bval file of the gradient table to synthesise
+          FSL bval file of the gradient table to synthesize
 
       --bvec <BVEC>
-          FSL bvec file of the gradient table to synthesise
+          FSL bvec file of the gradient table to synthesize
 
       --big-delta <BIG_DELTA>
           Diffusion time Δ (big delta), in seconds. If omitted, the value in the coefficient sidecar is used

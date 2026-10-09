@@ -39,7 +39,7 @@
 //! refined     → WM sheds high-SDM outliers (which are re-offered to CSF);
 //!               GM and CSF shed their partial-volume tails
 //! final       → CSF = top csf% by SDM; GM = the gm% closest to the refined-GM
-//!               median SDM; WM single-fibre = see [`select_sfwm_by_fa`]
+//!               median SDM; WM single-fiber = see [`select_sfwm_by_fa`]
 //! ```
 //!
 //! The SDM is `mean_over_shells( log(S̄_b0 / S̄_b) )`, volume-weighted — a
@@ -58,7 +58,7 @@
 //!     dev branch and was 10.0 through 3.0.x. Immaterial on data acquired at
 //!     exactly b=0, but on a scheme with b≈30 "b=0" volumes the three
 //!     conventions build the SDM's reference from different volumes.
-//!   * The single-fibre WM stage is FA-ranked ([`select_sfwm_by_fa`]),
+//!   * The single-fiber WM stage is FA-ranked ([`select_sfwm_by_fa`]),
 //!     equivalent to MRtrix's `-wm_algo fa`, not the built-in 2019 CSD metric.
 //!
 //! ## Measured against MRtrix
@@ -144,7 +144,7 @@ pub struct DhollanderSelectConfig {
     pub erode: usize,
     /// FA threshold for the crude WM vs GM-CSF split.
     pub fa: f64,
-    /// Final single-fibre WM voxels, as a percentage of refined WM.
+    /// Final single-fiber WM voxels, as a percentage of refined WM.
     pub sfwm_pct: f64,
     /// Final GM voxels, as a percentage of refined GM.
     pub gm_pct: f64,
@@ -153,7 +153,7 @@ pub struct DhollanderSelectConfig {
     /// b-value clustering tolerance (s/mm²) for the SDM shells.
     pub shell_tolerance: f64,
     /// SDM shells with fewer volumes than this are merged into their nearest
-    /// neighbour, so a single noisy direction cannot veto a voxel. Irrelevant
+    /// neighbor, so a single noisy direction cannot veto a voxel. Irrelevant
     /// for properly shelled data; load-bearing for continuous-b schemes.
     pub min_shell_volumes: usize,
 }
@@ -192,7 +192,7 @@ pub struct DhollanderStageCounts {
 
 /// The three final voxel populations plus the intermediate state a caller may
 /// want (the SDM itself, the safe mask, and refined WM for an alternative
-/// single-fibre stage).
+/// single-fiber stage).
 #[derive(Debug, Clone)]
 pub struct DhollanderSelection {
     pub sfwm: Array3<bool>,
@@ -381,8 +381,8 @@ pub fn select_voxels(
     let n_gm_target = pct_count(n_refined_gm, cfg.gm_pct, "GM")?;
     let gm = select_bottom(&gm_metric, &refined_gm, n_gm_target)?;
 
-    // Single-fibre WM.
-    let n_sfwm_target = pct_count(n_refined_wm, cfg.sfwm_pct, "single-fibre WM")?;
+    // Single-fiber WM.
+    let n_sfwm_target = pct_count(n_refined_wm, cfg.sfwm_pct, "single-fiber WM")?;
     let sfwm = select_sfwm_by_fa(dti, &refined_wm, n_sfwm_target)?;
 
     let counts = DhollanderStageCounts {
@@ -411,12 +411,12 @@ pub fn select_voxels(
     })
 }
 
-/// Single-fibre WM = the `n` highest-FA voxels of refined WM.
+/// Single-fiber WM = the `n` highest-FA voxels of refined WM.
 ///
 /// This is MRtrix's `-wm_algo fa` branch, not its default. The default is the
 /// Dhollander 2019 metric, which scores each refined-WM voxel by the ratio of
 /// its fODF peak amplitude to total (WM + CSF) l=0 amplitude under a two-tissue
-/// CSD fit — a genuine single-fibre test, where FA merely correlates with one.
+/// CSD fit — a genuine single-fiber test, where FA merely correlates with one.
 /// Both are supported upstream and both feed the same `amp2response` step; FA
 /// ranking is what cs_dmri can do without standing up a second CSD solve inside
 /// response estimation.
@@ -437,7 +437,7 @@ pub fn select_sfwm_by_fa(
 /// shelled acquisition. cs_dmri also has to cope with continuous-b CS-DSI
 /// schemes, so shells here are b-value clusters at
 /// `tolerance`, with clusters below `min_volumes` merged into their nearest
-/// neighbour. On genuinely shelled data (the QST validation set: 18/90/90/90 at
+/// neighbor. On genuinely shelled data (the QST validation set: 18/90/90/90 at
 /// b = 0/1000/2000/3000) this reproduces the acquisition shells exactly.
 ///
 /// Returns `(mean_b, volume_indices)` sorted by ascending b, b=0 first.
@@ -446,7 +446,7 @@ fn sdm_shells(dwi: &DwiData, cfg: &DhollanderSelectConfig) -> Vec<(f64, Vec<usiz
     let mut clusters: Vec<(f64, Vec<usize>)> =
         shells.into_iter().map(|s| (s.b, s.indices)).collect();
 
-    // Merge undersized clusters into the nearest surviving neighbour by mean b.
+    // Merge undersized clusters into the nearest surviving neighbor by mean b.
     // The b=0 cluster (index 0) is never merged away: it is the SDM reference.
     loop {
         if clusters.len() <= 2 {
@@ -555,7 +555,7 @@ fn signal_decay_metric(
 
 /// MRtrix's parameter-free optimal threshold (Ridgway et al., NeuroImage 2009,
 /// 44(1):99-111), as `Filter::estimate_optimal_threshold`: pick the threshold
-/// maximising the correlation between the image and the binary mask it induces,
+/// maximizing the correlation between the image and the binary mask it induces,
 /// searched by golden section over the value range.
 ///
 /// `values` must already be restricted to the mask and finite. Returns `None`
@@ -586,7 +586,7 @@ fn estimate_optimal_threshold(values: &[f64]) -> Option<f64> {
     }
 
     // Negative correlation between the image and the mask `value > threshold`;
-    // golden section minimises, so the returned threshold maximises correlation.
+    // golden section minimizes, so the returned threshold maximizes correlation.
     let cost = |threshold: f64| -> f64 {
         let mut hits = 0.0;
         let mut sum_xy = 0.0;
@@ -611,7 +611,7 @@ fn estimate_optimal_threshold(values: &[f64]) -> Option<f64> {
     ))
 }
 
-/// `Math::golden_section_search`. Minimises `f` on `[min_bound, max_bound]`.
+/// `Math::golden_section_search`. Minimizes `f` on `[min_bound, max_bound]`.
 fn golden_section_search<F: Fn(f64) -> f64>(
     f: F,
     min_bound: f64,
@@ -985,14 +985,14 @@ mod tests {
         );
         assert!(
             slab_of(&sel.sfwm).iter().all(|&z| z >= gm_end),
-            "final single-fibre WM voxels escaped the WM slab: {:?}",
+            "final single-fiber WM voxels escaped the WM slab: {:?}",
             sel.counts
         );
 
         // Erosion peels 3 layers off a solid 20³ cube.
         assert_eq!(sel.counts.eroded, 14 * 14 * 14);
         assert_eq!(sel.counts.safe, sel.counts.eroded);
-        // The percentages are honoured (ties broken by the jitter).
+        // The percentages are honored (ties broken by the jitter).
         assert_eq!(sel.counts.csf, (sel.counts.refined_csf as f64 * 0.10).round() as usize);
         assert_eq!(sel.counts.gm, (sel.counts.refined_gm as f64 * 0.02).round() as usize);
     }
@@ -1067,7 +1067,7 @@ mod tests {
         let mut mask = Array3::<bool>::default((7, 7, 7));
         mask.fill(true);
         let once = erode_mask(&mask, 1);
-        // Boundary voxels always go, plus their inward neighbours are kept.
+        // Boundary voxels always go, plus their inward neighbors are kept.
         assert!(!once[(0, 3, 3)]);
         assert!(once[(1, 1, 1)]);
         assert_eq!(count(&once), 5 * 5 * 5);

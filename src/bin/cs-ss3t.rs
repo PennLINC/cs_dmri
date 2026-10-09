@@ -12,12 +12,12 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 
-/// CLI flavour of [`LmaxWmStrategy`] — flat for clap.
+/// CLI flavor of [`LmaxWmStrategy`] — flat for clap.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum LmaxWmStrategyFlag {
     /// The same lmax (--lmax-wm) for every voxel. Default.
     Fixed,
-    /// For each voxel, the lmax in --lmax-wm-candidates that minimises the
+    /// For each voxel, the lmax in --lmax-wm-candidates that minimizes the
     /// Bayesian information criterion.
     PathBic,
 }
@@ -54,12 +54,12 @@ struct Cli {
     #[arg(long)]
     mask: Option<PathBuf>,
 
-    /// Single-fibre white matter response in MRtrix `.txt` format, with two
+    /// Single-fiber white matter response in MRtrix `.txt` format, with two
     /// rows: b=0 (isotropic) and the diffusion-weighted shell (lmax at least
     /// --lmax-wm).
     #[arg(long)]
     response_wm: PathBuf,
-    /// Grey matter response in MRtrix `.txt` format: two rows of one column
+    /// Gray matter response in MRtrix `.txt` format: two rows of one column
     /// each (lmax = 0).
     #[arg(long)]
     response_gm: PathBuf,
@@ -71,7 +71,7 @@ struct Cli {
     /// Output white matter FOD NIfTI (4D, one volume per SH coefficient).
     #[arg(long)]
     output_wm: PathBuf,
-    /// Output grey matter compartment NIfTI (4D, one volume).
+    /// Output gray matter compartment NIfTI (4D, one volume).
     #[arg(long)]
     output_gm: PathBuf,
     /// Output CSF compartment NIfTI (4D, one volume).

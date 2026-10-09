@@ -18,7 +18,7 @@
  * MPL-covered. Do not copy chunks of this file into other modules.
  */
 
-//! Multi-tissue log-domain intensity normalisation — a Rust port of the
+//! Multi-tissue log-domain intensity normalization — a Rust port of the
 //! algorithm behind MRtrix3's `mtnormalise`, used by `cs-ss3t-full` and
 //! `cs-mtnorm`.
 //!
@@ -57,7 +57,7 @@
 //!    `B_t = 1` otherwise (the MRtrix default: balance factors steer the
 //!    field fit but are not baked into the output).
 //!
-//! The polynomial is evaluated on centred, scaled voxel coordinates rather
+//! The polynomial is evaluated on centered, scaled voxel coordinates rather
 //! than scanner coordinates; the total-degree-`order` polynomial space is
 //! closed under affine coordinate changes, so the fitted field is the same
 //! while the normal equations stay well-conditioned.
@@ -81,7 +81,7 @@ pub struct MtnormaliseConfig {
     /// Polynomial order for the spatial bias field. Default 3 (= 20
     /// monomials), matching MRtrix3.
     pub poly_order: usize,
-    /// Reference value `T` the balanced tissue sum is normalised towards.
+    /// Reference value `T` the balanced tissue sum is normalized toward.
     /// The default (`None`) uses the median observed sum so the input's
     /// global scale is preserved. Set `Some(1.0/sqrt(4π))` (see
     /// [`target_sum_mrtrix_default`]) to match the MRtrix3 convention.
@@ -95,7 +95,7 @@ pub struct MtnormaliseConfig {
     /// MRtrix3's `-balanced` flag. The balance factors always steer the
     /// field estimation; this only controls whether they are applied to the
     /// output. MRtrix warns this has critical consequences for AFD
-    /// normalisation. Default `false`.
+    /// normalization. Default `false`.
     pub apply_balance: bool,
 }
 
@@ -332,7 +332,7 @@ fn update_field(
     Ok(())
 }
 
-/// Multi-tissue intensity normalisation. Mutates the three tissue arrays
+/// Multi-tissue intensity normalization. Mutates the three tissue arrays
 /// in-place: every SH coefficient is divided by `f(v)` (and multiplied by
 /// `b_t` when `cfg.apply_balance` is set) over the whole volume.
 ///
@@ -572,7 +572,7 @@ pub fn mtnormalise(
 }
 
 /// Convenience: `target_sum = 1/sqrt(4π) ≈ 0.282`, the MRtrix3 `mtnormalise`
-/// default. Makes the per-voxel sum of l=0 *coefficients* across normalised
+/// default. Makes the per-voxel sum of l=0 *coefficients* across normalized
 /// tissues equal to `1/sqrt(4π)` — equivalently, the sum of amplitudes
 /// `Y₀₀ · c₀₀` per voxel equals `1/(4π)`.
 pub fn target_sum_mrtrix_default() -> f64 {

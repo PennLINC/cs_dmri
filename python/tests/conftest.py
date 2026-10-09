@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 
 
-def fibre_series(n_dirs=30, shape=(12, 12, 8), seed=7, b=1000.0, n_b0=1):
-    """Synthetic single-shell series: per-voxel fibre angle and a shared
-    anatomical baseline, so neighbours correlate strongly and perpendicular
+def fiber_series(n_dirs=30, shape=(12, 12, 8), seed=7, b=1000.0, n_b0=1):
+    """Synthetic single-shell series: per-voxel fiber angle and a shared
+    anatomical baseline, so neighbors correlate strongly and perpendicular
     volumes less. Returns ``(data, bvals, bvecs)``."""
     rng = np.random.default_rng(seed)
     t = np.pi * np.arange(n_dirs) / n_dirs
@@ -24,4 +24,4 @@ def fibre_series(n_dirs=30, shape=(12, 12, 8), seed=7, b=1000.0, n_b0=1):
 
 @pytest.fixture
 def series():
-    return fibre_series()
+    return fiber_series()

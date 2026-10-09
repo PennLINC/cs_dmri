@@ -247,7 +247,7 @@ fn qc_columns(py: Python<'_>) -> PyResult<Vec<Bound<'_, PyDict>>> {
     cs_dmri::qc::qc_columns().iter().map(|c| to_py_dict(py, c)).collect()
 }
 
-/// `(volume, neighbour)` pairs used by NDC.
+/// `(volume, neighbor)` pairs used by NDC.
 #[pyfunction]
 #[pyo3(signature = (bvals, bvecs, *, b0_threshold=50.0))]
 fn qc_neighbor_pairs(

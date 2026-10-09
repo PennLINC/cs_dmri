@@ -27,14 +27,14 @@ L1 (compressed sensing)
   - `l2-anchored` (default): along a logarithmic path of $\alpha$ values, the
     largest $\alpha$ whose residual sum of squares is within a factor
     $(1+\text{slack})$ of that of the L2 fit;
-  - `path-bic`: the $\alpha$ on the same path that minimises the Bayesian
+  - `path-bic`: the $\alpha$ on the same path that minimizes the Bayesian
     information criterion;
   - `alpha-ratio`: a fixed fraction of $\alpha_{\max}$, the smallest $\alpha$
     for which all coefficients are zero;
   - `fixed`: one $\alpha$ for all voxels.
 
 L2
-: Tikhonov regularisation with separate radial and angular penalties
+: Tikhonov regularization with separate radial and angular penalties
   ($\lambda_N$, $\lambda_L$), solved in closed form.
 
 Non-negative ODF
@@ -88,7 +88,7 @@ Scalars
   probabilities (RTOP, RTAP, RTPP), mean squared displacement (MSD), q-space
   inverse variance (QIV) and non-Gaussianity (NG) from closed-form expressions
   in the SHORE coefficients ({meth}`~cs_dmri.shore.ShoreFit.microstructure`).
-  RTAP and RTPP require a fibre direction per voxel. Voxels whose value exceeds
+  RTAP and RTPP require a fiber direction per voxel. Voxels whose value exceeds
   a multiple of the 99th percentile are treated as fit failures and set to NaN.
 
 Synthesis

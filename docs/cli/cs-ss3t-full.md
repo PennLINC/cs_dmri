@@ -1,9 +1,9 @@
 # cs-ss3t-full
 
-Response estimation, SS3T-CSD and intensity normalisation in one step. See {doc}`../user/multitissue`.
+Response estimation, SS3T-CSD and intensity normalization in one step. See {doc}`../user/multitissue`.
 
 ```text
-Single-shell three-tissue pipeline: response function estimation, SS3T-CSD and multi-tissue intensity normalisation
+Single-shell three-tissue pipeline: response function estimation, SS3T-CSD and multi-tissue intensity normalization
 
 Usage: cs-ss3t-full [OPTIONS] --dwi <DWI> --bval <BVAL> --bvec <BVEC>
 
@@ -21,22 +21,22 @@ Options:
           Brain mask NIfTI. If omitted, a mask is computed from the mean b=0 image
 
       --output-wm <OUTPUT_WM>
-          Output white matter FOD NIfTI, normalised unless `--no-normalize` is given. Required unless `--odx` is given
+          Output white matter FOD NIfTI, normalized unless `--no-normalize` is given. Required unless `--odx` is given
 
       --output-gm <OUTPUT_GM>
-          Output grey matter compartment NIfTI. Required unless `--odx` is given
+          Output gray matter compartment NIfTI. Required unless `--odx` is given
 
       --output-csf <OUTPUT_CSF>
           Output CSF compartment NIfTI. Required unless `--odx` is given
 
       --odx <PATH>
-          Write a single ODX file containing the white matter SH coefficients, the grey matter and CSF compartments (under `sh/`), the brain mask, the response functions (in the header) and white matter peaks. The NIfTI outputs are then not written. A path with a `.odx` extension is written as a zip archive; any other path is written as a directory
+          Write a single ODX file containing the white matter SH coefficients, the gray matter and CSF compartments (under `sh/`), the brain mask, the response functions (in the header) and white matter peaks. The NIfTI outputs are then not written. A path with a `.odx` extension is written as a zip archive; any other path is written as a directory
 
       --response-wm <RESPONSE_WM>
           White matter response in MRtrix `.txt` format. If all three of `--response-{wm,gm,csf}` are given, response estimation is skipped
 
       --response-gm <RESPONSE_GM>
-          Grey matter response in MRtrix `.txt` format (see --response-wm)
+          Gray matter response in MRtrix `.txt` format (see --response-wm)
 
       --response-csf <RESPONSE_CSF>
           CSF response in MRtrix `.txt` format (see --response-wm)
@@ -45,7 +45,7 @@ Options:
           Directory in which to write the estimated responses (`wm_response.txt`, `gm_response.txt`, `csf_response.txt`). Ignored when responses are supplied with `--response-*`
 
       --no-normalize
-          Do not apply multi-tissue intensity normalisation; the SS3T-CSD outputs are written as fitted
+          Do not apply multi-tissue intensity normalization; the SS3T-CSD outputs are written as fitted
 
       --dh-erode <DH_ERODE>
           Number of erosion passes applied to the brain mask before tissue selection. Not used with --legacy-tissue-selection
@@ -53,17 +53,17 @@ Options:
           [default: 3]
 
       --dh-fa <DH_FA>
-          FA threshold for the initial separation of white matter from grey matter and CSF. Not used with --legacy-tissue-selection
+          FA threshold for the initial separation of white matter from gray matter and CSF. Not used with --legacy-tissue-selection
           
           [default: 0.2]
 
       --dh-sfwm <DH_SFWM>
-          Number of single-fibre white matter voxels selected, as a percentage of the refined white matter. Not used with --legacy-tissue-selection
+          Number of single-fiber white matter voxels selected, as a percentage of the refined white matter. Not used with --legacy-tissue-selection
           
           [default: 0.5]
 
       --dh-gm <DH_GM>
-          Number of grey matter voxels selected, as a percentage of the refined grey matter. Not used with --legacy-tissue-selection
+          Number of gray matter voxels selected, as a percentage of the refined gray matter. Not used with --legacy-tissue-selection
           
           [default: 2]
 
@@ -73,15 +73,15 @@ Options:
           [default: 10]
 
       --legacy-tissue-selection
-          Use the earlier threshold-based tissue selection instead of the staged selection based on a signal decay metric. CSF voxels are those in the top --md-csf-pct percent of MD; single-fibre white matter voxels have FA above --fa-wm-threshold and eigenvalue ratio above --fiber-dominance-ratio; the remaining voxels are grey matter. The CSF class selected in this way can include partial-volume voxels
+          Use the earlier threshold-based tissue selection instead of the staged selection based on a signal decay metric. CSF voxels are those in the top --md-csf-pct percent of MD; single-fiber white matter voxels have FA above --fa-wm-threshold and eigenvalue ratio above --fiber-dominance-ratio; the remaining voxels are gray matter. The CSF class selected in this way can include partial-volume voxels
 
       --fa-wm-threshold <FA_WM_THRESHOLD>
-          FA above which a voxel is a single-fibre white matter candidate. Used only with --legacy-tissue-selection
+          FA above which a voxel is a single-fiber white matter candidate. Used only with --legacy-tissue-selection
           
           [default: 0.7]
 
       --fiber-dominance-ratio <FIBER_DOMINANCE_RATIO>
-          Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fibre white matter voxel; 0 disables the test. Used only with --legacy-tissue-selection
+          Minimum eigenvalue ratio λ₁ / mean(λ₂, λ₃) for a single-fiber white matter voxel; 0 disables the test. Used only with --legacy-tissue-selection
           
           [default: 2]
 
@@ -106,12 +106,12 @@ Options:
           [default: 8]
 
       --mtnorm-poly-order <MTNORM_POLY_ORDER>
-          Order of the polynomial bias field model in the normalisation step (order 3 has 20 terms)
+          Order of the polynomial bias field model in the normalization step (order 3 has 20 terms)
           
           [default: 3]
 
       --mtnorm-target-median
-          In the normalisation step, use the median of the observed sums of l=0 coefficients as the target instead of 1/√(4π). The global scale of the input is preserved
+          In the normalization step, use the median of the observed sums of l=0 coefficients as the target instead of 1/√(4π). The global scale of the input is preserved
 
       --mtnorm-balanced
           Multiply each output tissue by its balance factor, as in MRtrix3 `mtnormalise -balanced`

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
-"""Single-shell three-tissue CSD: responses, SS3T, multi-tissue normalisation."""
+"""Single-shell three-tissue CSD: responses, SS3T, multi-tissue normalization."""
 
 from __future__ import annotations
 
@@ -175,7 +175,7 @@ class SS3TFit:
 
     def mtnormalise(self, *, target_sum: float | str = MTNORMALISE_TARGET, poly_order: int = 3,
                     niter: int = 15, balance_maxiter: int = 7, balanced: bool = False) -> "SS3TFit":
-        """Multi-tissue intensity normalisation (MRtrix3 ``mtnormalise``);
+        """Multi-tissue intensity normalization (MRtrix3 ``mtnormalise``);
         returns a new fit. ``target_sum="median"`` keeps the median observed sum."""
         wm, gm, csf, diag = mtnormalise(self.wm, self.gm, self.csf, self.mask, target_sum=target_sum,
                                         poly_order=poly_order, niter=niter, balance_maxiter=balance_maxiter,
@@ -196,7 +196,7 @@ class SS3TFit:
 
 def mtnormalise(wm, gm, csf, mask, *, target_sum: float | str = MTNORMALISE_TARGET, poly_order: int = 3,
                 niter: int = 15, balance_maxiter: int = 7, balanced: bool = False):
-    """Multi-tissue log-domain intensity normalisation, a port of MRtrix3's
+    """Multi-tissue log-domain intensity normalization, a port of MRtrix3's
     ``mtnormalise``. ``wm`` is (X, Y, Z, n_sh); ``gm``/``csf`` are (X, Y, Z).
     Returns new ``(wm, gm, csf, diagnostics)``."""
     if isinstance(target_sum, str):

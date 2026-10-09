@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
-"""Normalise the ``(data | DWI, mask)`` arguments every model accepts."""
+"""Normalize the ``(data | DWI, mask)`` arguments every model accepts."""
 
 from __future__ import annotations
 

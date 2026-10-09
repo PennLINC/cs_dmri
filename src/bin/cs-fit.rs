@@ -19,7 +19,7 @@ use cs_dmri::{Heartbeat, ProvenanceBuilder, ProvenanceMode, effective_thread_cou
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Regularization {
-    /// L1-regularised (sparse) fit solved with FISTA. Default.
+    /// L1-regularized (sparse) fit solved with FISTA. Default.
     L1,
     /// L2 (Tikhonov) fit with a closed-form solution.
     L2,
@@ -36,7 +36,7 @@ enum AlphaMode {
     /// α = ratio · α_max for each voxel, where α_max is the smallest α giving
     /// an all-zero solution (--alpha-ratio).
     AlphaRatio,
-    /// Along a logarithmic path from α_max to α_max·eps, the α minimising the
+    /// Along a logarithmic path from α_max to α_max·eps, the α minimizing the
     /// Bayesian information criterion.
     PathBic,
     /// Along the same path, the largest α whose residual sum of squares is
@@ -82,7 +82,7 @@ struct Cli {
     #[arg(long, default_value_t = 700.0)]
     zeta: f64,
 
-    /// Regularisation of the coefficient fit.
+    /// Regularization of the coefficient fit.
     #[arg(long, value_enum, default_value_t = Regularization::L1)]
     reg: Regularization,
 
@@ -96,11 +96,11 @@ struct Cli {
     /// Ratio α / α_max, in (0, 1). Used only with `--alpha-mode alpha-ratio`.
     #[arg(long, default_value_t = 1e-3)]
     alpha_ratio: f64,
-    /// Number of α values on the regularisation path (path-bic, l2-anchored).
+    /// Number of α values on the regularization path (path-bic, l2-anchored).
     /// Must be at least 2.
     #[arg(long, default_value_t = 20)]
     path_n_alphas: usize,
-    /// Ratio α_min / α_max of the regularisation path (path-bic,
+    /// Ratio α_min / α_max of the regularization path (path-bic,
     /// l2-anchored), in (0, 1). Default: 1e-3 for path-bic and 1e-4 for
     /// l2-anchored.
     #[arg(long)]
@@ -112,7 +112,7 @@ struct Cli {
     slack: f64,
 
     /// Maximum number of FISTA iterations per L1 fit, including each fit on
-    /// the regularisation path.
+    /// the regularization path.
     #[arg(long, default_value_t = 1000)]
     max_iter: u32,
     /// L1 convergence tolerance on the relative change in coefficients.
@@ -122,10 +122,10 @@ struct Cli {
     #[arg(long)]
     non_negative: bool,
 
-    /// L2 radial regularisation weight λ_N.
+    /// L2 radial regularization weight λ_N.
     #[arg(long, default_value_t = 1e-8)]
     lambda_n: f64,
-    /// L2 angular regularisation weight λ_L.
+    /// L2 angular regularization weight λ_L.
     #[arg(long, default_value_t = 1e-8)]
     lambda_l: f64,
 
@@ -137,13 +137,13 @@ struct Cli {
     #[arg(long, default_value_t = 1e-9)]
     amp_nn_tol: f64,
     /// Tikhonov term added to the diagonal of HᵀH for `--reg amp-nn`. Larger
-    /// values are needed if the Cholesky factorisation fails on a
+    /// values are needed if the Cholesky factorization fails on a
     /// rank-deficient design.
     #[arg(long, default_value_t = 1e-10)]
     amp_nn_epsilon: f64,
 
     /// Also write per-voxel maps of R², residual, iteration count and
-    /// regularisation type, and, for L1 fits with per-voxel α selection, the
+    /// regularization type, and, for L1 fits with per-voxel α selection, the
     /// selected α, next to the coefficient NIfTI.
     #[arg(long)]
     diagnostics: bool,
@@ -180,7 +180,7 @@ struct Cli {
 
     /// Also write an ODX file of ODF SH coefficients (MRtrix3/Tournier
     /// convention) to this path, using the `cs-odf` defaults: DSI Studio
-    /// ODF8 peak finding, brain-wide ODF normalisation, an anisotropic power
+    /// ODF8 peak finding, brain-wide ODF normalization, an anisotropic power
     /// map, and lmax equal to the largest even integer
     /// ≤ --radial-order. For other settings, run `cs-odf` on the coefficient
     /// NIfTI.

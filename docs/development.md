@@ -46,7 +46,7 @@ supported platforms and an sdist, and publishes them to PyPI.
 
 ## Licensing of contributions
 
-Contributions are accepted under the project licence (MIT or Apache-2.0). Code
+Contributions are accepted under the project license (MIT or Apache-2.0). Code
 ported from MRtrix3 must stay in its own file under the Mozilla Public License
 2.0, with the notice and SPDX line used by the existing such files; see
 {doc}`license`.

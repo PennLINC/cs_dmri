@@ -154,7 +154,7 @@ class ShoreFit:
                        n_threads=None) -> dict:
         """RTOP, RTAP, RTPP, MSD, QIV and NG maps.
 
-        RTAP/RTPP need a fibre direction per voxel: ``directions`` (X, Y, Z, 3)
+        RTAP/RTPP need a fiber direction per voxel: ``directions`` (X, Y, Z, 3)
         in the image's voxel-axis frame, or by default the RESTORE principal
         direction of the DWI this was fit on. Without either they are NaN.
         ``units="um"`` follows TORTOISE (q in 1/µm); ``"mm"`` follows dipy.

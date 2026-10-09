@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! `cs-mtnorm`: native-Rust multi-tissue intensity normalisation.
+//! `cs-mtnorm`: native-Rust multi-tissue intensity normalization.
 //!
 //! Rust port of the log-domain algorithm behind MRtrix3's `mtnormalise`
 //! (Raffelt 2017 / Dhollander 2021), including per-tissue balance factors
@@ -21,12 +21,12 @@ use cs_dmri::multitissue::mtnormalise::{
 use cs_dmri::CsDmriError;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Multi-tissue intensity normalisation and bias field correction in the log domain (Raffelt et al., 2017; Dhollander et al., 2021)")]
+#[command(version, about = "Multi-tissue intensity normalization and bias field correction in the log domain (Raffelt et al., 2017; Dhollander et al., 2021)")]
 struct Cli {
     /// Input white matter FOD NIfTI (4D, one volume per SH coefficient).
     #[arg(long)]
     in_wm: PathBuf,
-    /// Input grey matter NIfTI (3D, or 4D with one volume).
+    /// Input gray matter NIfTI (3D, or 4D with one volume).
     #[arg(long)]
     in_gm: PathBuf,
     /// Input CSF NIfTI (3D, or 4D with one volume).
@@ -36,14 +36,14 @@ struct Cli {
     #[arg(long)]
     mask: PathBuf,
 
-    /// Output normalised white matter FOD NIfTI (4D, one volume per SH
+    /// Output normalized white matter FOD NIfTI (4D, one volume per SH
     /// coefficient).
     #[arg(long)]
     out_wm: PathBuf,
-    /// Output normalised grey matter NIfTI (4D, one volume).
+    /// Output normalized gray matter NIfTI (4D, one volume).
     #[arg(long)]
     out_gm: PathBuf,
-    /// Output normalised CSF NIfTI (4D, one volume).
+    /// Output normalized CSF NIfTI (4D, one volume).
     #[arg(long)]
     out_csf: PathBuf,
 
@@ -51,7 +51,7 @@ struct Cli {
     #[arg(long, default_value_t = 3)]
     poly_order: usize,
 
-    /// Target value for the sum over tissues of the normalised l=0 SH
+    /// Target value for the sum over tissues of the normalized l=0 SH
     /// coefficients in each voxel. Default: 1/√(4π), as in MRtrix3
     /// `mtnormalise`.
     #[arg(long)]
@@ -156,10 +156,10 @@ fn main() -> Result<()> {
         .with_context(|| format!("write {:?}", args.out_csf))?;
 
     if !args.quiet {
-        eprintln!("[cs-mtnorm] wrote normalised WM → {}", args.out_wm.display());
-        eprintln!("[cs-mtnorm] wrote normalised GM → {}", args.out_gm.display());
+        eprintln!("[cs-mtnorm] wrote normalized WM → {}", args.out_wm.display());
+        eprintln!("[cs-mtnorm] wrote normalized GM → {}", args.out_gm.display());
         eprintln!(
-            "[cs-mtnorm] wrote normalised CSF → {}",
+            "[cs-mtnorm] wrote normalized CSF → {}",
             args.out_csf.display()
         );
     }
