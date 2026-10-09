@@ -939,8 +939,8 @@ dependencies = [
 
 [[package]]
 name = "odx-rs"
-version = "0.2.0"
-source = "git+https://github.com/PennLINC/odx-rs?tag=v0.2.0#4d7c34ada96c7f92a7c5617eabb44f30f5e0ba80"
+version = "0.3.0"
+source = "git+https://github.com/PennLINC/odx-rs?tag=v0.3.0#d2defbb3be39247c655ccd8e81f934e4ce87f283"
 dependencies = [
  "bytemuck",
  "clap",

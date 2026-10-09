@@ -66,7 +66,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 anyhow = "1"
-odx-rs = { git = "https://github.com/PennLINC/odx-rs", tag = "v0.2.0" }
+odx-rs = { git = "https://github.com/PennLINC/odx-rs", tag = "v0.3.0" }
 mimalloc = { version = "0.1", default-features = false, optional = true }
 
 [features]
