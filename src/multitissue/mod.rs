@@ -23,7 +23,7 @@ pub use mtnormalise::{MtnormaliseConfig, MtnormaliseDiagnostics, mtnormalise, ta
 pub use response::{ResponseError, TissueResponse};
 pub use response_estimation::{
     DhollanderConfig, ResponseEstimationDiagnostics, Ss3tResponseEstimate, estimate_responses,
-    write_response_txt,
+    format_response_txt, write_response_txt,
 };
 pub use sidecar::{Ss3tSidecar, Ss3tSolverParams};
 pub use ss3t::{

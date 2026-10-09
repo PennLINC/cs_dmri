@@ -17,10 +17,13 @@
 //! - **b=0 volumes** are those with `b ≤ b0_threshold` (a parameter; qsiprep
 //!   passes its own `b0_threshold`).
 //! - **Neighbours** are found in approximate q-space `√b · bvec`, treating `q`
-//!   and `−q` as the same direction. A candidate at the same q-space point (an
-//!   identical or antipodal repeat) is never a neighbour: a repeat measures the
-//!   same signal, so pairing it would report reproducibility, not neighbourhood
-//!   consistency.
+//!   and `−q` as the same direction, exactly as dipy does. Repeated
+//!   acquisitions of a q-space point may pair with each other. In merged AP+PA
+//!   series, where every volume's nearest neighbour is its twin from the other
+//!   run, that pairing measured slightly *lower* NDC than excluding twins
+//!   (0.786 vs 0.803 on a HASC55 AP+PA series): the twin carries cross-run
+//!   distortion and motion differences, so pairing with it is a consistency
+//!   check rather than an inflation.
 //! - **NDC averages over every b>0 volume.** DSI Studio instead keeps a pair
 //!   only when the volume's index exceeds its neighbour's, which makes NDC
 //!   depend on acquisition order (0.970–0.977 under random reorderings of one
@@ -92,16 +95,10 @@ fn dwi_indices(bvals: &[f64], b0_threshold: f64) -> Vec<usize> {
     (0..bvals.len()).filter(|&i| bvals[i] > b0_threshold).collect()
 }
 
-/// `j` is at the same q-space point as `i` (identical or antipodal repeat).
-fn same_point(qi: &[f64; 3], qj: &[f64; 3]) -> bool {
-    let tol = 1e-6 * norm(qi).max(1.0);
-    norm(&sub(qi, qj)) <= tol || norm(&add(qi, qj)) <= tol
-}
-
-/// For each b>0 volume, its nearest b>0 neighbour in approximate q-space
-/// (antipodally symmetric, repeats of the same q-space point excluded), as
-/// `(volume, neighbour)` pairs in volume order. Ties go to the lowest index.
-/// Volumes with no valid neighbour are omitted.
+/// For each b>0 volume, its nearest other b>0 volume in approximate q-space
+/// (antipodally symmetric), as `(volume, neighbour)` pairs in volume order.
+/// Ties go to the lowest index. Matches dipy's `find_qspace_neighbors`, except
+/// that a lone b>0 volume has no neighbour here (dipy pairs it with a b=0).
 pub fn find_qspace_neighbors(gtab: &GradientTable, b0_threshold: f64) -> Vec<(usize, usize)> {
     let q = qvecs(&gtab.bvals, &gtab.bvecs);
     let dwi = dwi_indices(&gtab.bvals, b0_threshold);
@@ -109,7 +106,7 @@ pub fn find_qspace_neighbors(gtab: &GradientTable, b0_threshold: f64) -> Vec<(us
         .filter_map(|&i| {
             let mut best: Option<(f64, usize)> = None;
             for &j in &dwi {
-                if j == i || same_point(&q[i], &q[j]) {
+                if j == i {
                     continue;
                 }
                 let d = norm(&sub(&q[i], &q[j])).min(norm(&add(&q[i], &q[j])));
@@ -126,7 +123,8 @@ pub fn find_qspace_neighbors(gtab: &GradientTable, b0_threshold: f64) -> Vec<(us
 /// reference's perpendicular direction. A candidate's component perpendicular
 /// to the reference q-vector is rescaled to the reference's length, and the
 /// candidate nearest that vector wins. Parallel candidates (no perpendicular
-/// component) and repeats of the reference's q-space point are skipped.
+/// component, which includes repeats of the reference's direction) are
+/// skipped, as in dipy PR #4224.
 pub fn find_qspace_contrast(gtab: &GradientTable, b0_threshold: f64) -> Vec<(usize, usize)> {
     let q = qvecs(&gtab.bvals, &gtab.bvecs);
     let dwi = dwi_indices(&gtab.bvals, b0_threshold);
@@ -137,7 +135,7 @@ pub fn find_qspace_contrast(gtab: &GradientTable, b0_threshold: f64) -> Vec<(usi
             let len = len2.sqrt();
             let mut best: Option<(f64, usize)> = None;
             for &j in &dwi {
-                if j == i || same_point(&qi, &q[j]) {
+                if j == i {
                     continue;
                 }
                 let c = q[j];
@@ -748,10 +746,10 @@ pub fn qc_columns() -> Vec<QcColumn> {
         c(
             "ndc",
             "Neighboring DWI correlation",
-            "Mean, over every b>0 volume, of the correlation between the volume and its nearest q-space \
-             neighbour (antipodally symmetric; repeats of the same q-space point excluded), over all voxels. \
-             Unlike DSI Studio's version it does not depend on volume order. Below 0.4 flags a low-quality \
-             image (Yeh et al. 2019).",
+            "Mean, over every b>0 volume, of the correlation between the volume and its nearest other b>0 \
+             volume in q-space (antipodally symmetric), over all voxels; dipy's definition. Unlike DSI \
+             Studio's version it does not depend on volume order. Below 0.4 flags a low-quality image \
+             (Yeh et al. 2019).",
             None,
             Some("neighbor_corr"),
         ),
@@ -926,17 +924,16 @@ mod tests {
         assert_eq!(find_qspace_neighbors(&g, 50.0)[0], (1, 3));
     }
 
-    /// An identical or antipodal repeat is never chosen as the neighbour.
+    /// A repeated acquisition of the same q-space point is a valid neighbour.
     #[test]
-    fn repeats_are_not_neighbors() {
+    fn repeats_pair_with_each_other() {
         let g = gtab(
-            &[1000.0, 1000.0, 1000.0, 1000.0],
-            &[[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.9, 0.43589, 0.0]],
+            &[1000.0, 1000.0, 1000.0],
+            &[[1.0, 0.0, 0.0], [0.9, 0.43589, 0.0], [-1.0, 0.0, 0.0]],
         );
         let n = find_qspace_neighbors(&g, 50.0);
-        assert_eq!(n[0], (0, 3));
-        assert_eq!(n[1], (1, 3));
-        assert_eq!(n[2], (2, 3));
+        assert_eq!(n[0], (0, 2));
+        assert_eq!(n[2], (2, 0));
     }
 
     /// NDC is the same whatever order the volumes are stored in.

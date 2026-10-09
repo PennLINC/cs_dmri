@@ -124,8 +124,12 @@ columns have new names:
 - **NDC averages over every b>0 volume.** DSI Studio counts each neighbour pair
   once, keyed on volume index, which makes its NDC depend on acquisition order:
   0.970–0.977 under random reorderings of one HASC92 series, where this
-  definition gives 0.9733 every time. Repeats of the same q-space point are
-  never paired. The b=0 threshold is a parameter (`--b0-threshold`, default 50).
+  definition gives 0.9733 every time. Otherwise it is dipy's definition:
+  repeated acquisitions may pair with each other. In merged AP+PA series each
+  volume pairs with its twin from the other run, which measured slightly lower
+  NDC than excluding twins (0.786 vs 0.803), so pairing them adds a cross-run
+  consistency check rather than inflating the score. The b=0 threshold is a
+  parameter (`--b0-threshold`, default 50).
 - **Masks come from the caller.** DSI Studio uses its own internal mask, and its
   construction changed between versions. On one series the contrast ratio is
   1.12 unmasked, 1.48 inside a SynthStrip mask, 1.74 with DSI Studio 2024's mask

@@ -144,9 +144,8 @@ def _b0(gtab, b0_threshold):
 def neighboring_dwi_correlation(data, gtab, mask=None, *, b0_threshold=None, n_threads=None):
     """Mean correlation of each b>0 volume with its nearest q-space neighbour.
 
-    Order-invariant (every volume counts), antipodally symmetric, and repeats
-    of the same q-space point are never paired. ``None`` if no volume has a
-    neighbour.
+    Order-invariant (every volume counts) and antipodally symmetric: dipy's
+    definition. ``None`` if no volume has a neighbour.
     """
     gtab = as_gradient_table(gtab)
     vol = as_volume(data)
@@ -196,7 +195,7 @@ def fixel_coherence(principal_dir, fa, mask, affine, *, world_directions=False, 
 
 def assess(data, gtab, mask=None, *, affine=None, coherence=True, tensor_fit=None, b0_threshold=None,
            slice_axis=2, min_slice_voxels=100, slice_smoothing_sigma=2.0, slice_threshold=2.5,
-           mask_source=None, n_threads=None) -> QCReport:
+           mask_source=None, voxel_size=None, extra_warnings=(), n_threads=None) -> QCReport:
     """All QC metrics for an array. :meth:`cs_dmri.DWI.qc` is the convenient
     form; it reuses the DWI's cached tensor fit for ``fixel_coherence``.
 
@@ -211,7 +210,7 @@ def assess(data, gtab, mask=None, *, affine=None, coherence=True, tensor_fit=Non
         vol, gtab.bvals, gtab.bvecs, m, b0_threshold=b0, slice_axis=slice_axis,
         min_slice_voxels=min_slice_voxels, slice_smoothing_sigma=slice_smoothing_sigma,
         slice_threshold=slice_threshold, n_threads=n_threads)
-    warnings = list(r["warnings"])
+    warnings = list(extra_warnings) + list(r["warnings"])
 
     coh = elasticity = None
     if coherence:
@@ -226,8 +225,9 @@ def assess(data, gtab, mask=None, *, affine=None, coherence=True, tensor_fit=Non
             c = fixel_coherence(tensor_fit.principal_dir, tensor_fit.fa, m, affine, n_threads=n_threads)
             coh, elasticity = c["coherence"], c["threshold_elasticity"]
 
-    voxel_size = None
-    if affine is not None:
+    if voxel_size is not None:
+        voxel_size = tuple(float(x) for x in voxel_size)
+    elif affine is not None:
         a = np.asarray(affine, dtype=np.float64)
         voxel_size = tuple(float(x) for x in np.linalg.norm(a[:3, :3], axis=0))
 

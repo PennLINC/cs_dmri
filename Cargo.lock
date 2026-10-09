@@ -322,6 +322,7 @@ dependencies = [
 name = "cs-dmri-py"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cs-dmri",
  "ndarray",
  "numpy",
@@ -827,6 +828,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
+ "rayon",
 ]
 
 [[package]]

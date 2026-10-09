@@ -35,12 +35,24 @@ def test_contrast_matches_pr_4224(series):
     assert cs.qc.dwi_contrast_ratio(data, gtab) == pytest.approx(expect, abs=1e-6)
 
 
-def test_repeats_are_never_neighbours():
-    bvals = np.array([1000.0] * 4)
-    bvecs = np.array([[1, 0, 0], [1, 0, 0], [-1, 0, 0], [0.9, 0.43589, 0]])
-    # Volumes 0-2 are the same q-space point (identical or antipodal), so none
-    # of them pairs with another; volume 3 pairs with the first of them.
-    assert _cs_dmri.qc_neighbor_pairs(bvals, bvecs) == [(0, 3), (1, 3), (2, 3), (3, 0)]
+def test_repeats_may_pair():
+    bvals = np.array([1000.0] * 3)
+    bvecs = np.array([[1, 0, 0], [0.9, 0.43589, 0], [-1, 0, 0]])
+    pairs = _cs_dmri.qc_neighbor_pairs(bvals, bvecs)
+    assert pairs[0] == (0, 2) and pairs[2] == (2, 0)
+
+
+def test_ndc_with_repeats_matches_dipy(series):
+    dipy_qc = pytest.importorskip("dipy.stats.qc")
+    from dipy.core.gradients import gradient_table
+
+    data, bvals, bvecs = series
+    data = np.concatenate([data, data[..., 1:] * 1.01], axis=-1)  # a repeated run
+    bvals = np.concatenate([bvals, bvals[1:]])
+    bvecs = np.vstack([bvecs, -bvecs[1:]])
+    ours = cs.qc.neighboring_dwi_correlation(data, (bvals, bvecs))
+    theirs = dipy_qc.neighboring_dwi_correlation(data, gradient_table(bvals, bvecs=bvecs))
+    assert ours == pytest.approx(theirs, abs=1e-6)
 
 
 def test_ndc_is_order_invariant(series):

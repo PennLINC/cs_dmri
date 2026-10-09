@@ -193,8 +193,30 @@ pub fn write_ss3t_odx(
     overwrite: bool,
     directory: bool,
 ) -> Result<()> {
+    let raw_affine = read_reference_affine(dwi_ref)
+        .map_err(|e| anyhow!("read affine from {:?}: {e}", dwi_ref))?;
+    write_ss3t_odx_with_affine(
+        output_path, raw_affine, mask, wm, gm, csf, lmax_wm, responses, overwrite, directory,
+    )
+}
+
+/// [`write_ss3t_odx`] with the voxel-to-world affine given directly instead
+/// of read from the DWI NIfTI.
+#[allow(clippy::too_many_arguments)]
+pub fn write_ss3t_odx_with_affine(
+    output_path: &Path,
+    raw_affine: [[f64; 4]; 4],
+    mask: &Array3<bool>,
+    wm: &Array4<f32>,
+    gm: &Array4<f32>,
+    csf: &Array4<f32>,
+    lmax_wm: usize,
+    responses: &Ss3tResponses,
+    overwrite: bool,
+    directory: bool,
+) -> Result<()> {
     write_multitissue_odx(
-        output_path, dwi_ref, mask, wm, gm, csf, lmax_wm, &responses.wm, &responses.gm,
+        output_path, raw_affine, None, mask, wm, gm, csf, lmax_wm, &responses.wm, &responses.gm,
         &responses.csf, "ss3t_responses", None, None, overwrite, directory, 0.0, 0.0, None,
     )
 }
@@ -231,8 +253,10 @@ pub fn write_continuous_b_odx(
     quant_meta: Option<&ContinuousBQuantMeta>,
 ) -> Result<()> {
     let [wm_response, gm_response, csf_response] = responses;
+    let raw_affine = read_reference_affine(dwi_ref)
+        .map_err(|e| anyhow!("read affine from {:?}: {e}", dwi_ref))?;
     write_multitissue_odx(
-        output_path, dwi_ref, mask, wm, gm, csf, lmax_wm, wm_response, gm_response,
+        output_path, raw_affine, Some(dwi_ref), mask, wm, gm, csf, lmax_wm, wm_response, gm_response,
         csf_response, response_key, Some(b_step), floor, overwrite, directory,
         peak_min_amplitude, peak_min_amplitude_frac, quant_meta,
     )
@@ -246,7 +270,9 @@ pub fn write_continuous_b_odx(
 #[allow(clippy::too_many_arguments)]
 fn write_multitissue_odx(
     output_path: &Path,
-    dwi_ref: &Path,
+    raw_affine: [[f64; 4]; 4],
+    // The DWI the fit came from, recorded as the BIDS `Sources` entry.
+    dwi_ref: Option<&Path>,
     mask: &Array3<bool>,
     wm: &Array4<f32>,
     gm: &Array4<f32>,
@@ -265,8 +291,6 @@ fn write_multitissue_odx(
     peak_min_amplitude_frac: f32,
     quant_meta: Option<&ContinuousBQuantMeta>,
 ) -> Result<()> {
-    let raw_affine = read_reference_affine(dwi_ref)
-        .map_err(|e| anyhow!("read affine from {:?}: {e}", dwi_ref))?;
     // Canonicalize to RAS+ so this ODX shares voxel ordering with `odx convert`
     // output (matching the MRtrix / cs-dsi-eval references). The fODF SH and
     // peaks are stored in world (RAS) space, so only the voxel grid is reindexed
@@ -607,7 +631,7 @@ pub struct GeneratedBy {
 /// (`...MM`, `...MM3`) per the BIDS practice of encoding units in the field.
 fn bids_json(
     meta: &ContinuousBQuantMeta,
-    dwi_ref: &Path,
+    dwi_ref: Option<&Path>,
     affine: &[[f64; 4]; 4],
 ) -> serde_json::Value {
     // Voxel dimensions are the column norms of the affine's 3x3 block.
@@ -626,7 +650,7 @@ fn bids_json(
              multi-tissue constrained spherical deconvolution, normalized \
              per voxel by the b=0 signal. NOT in AFD units: see FODScaling."
         },
-        "Sources": [bids_uri(dwi_ref)],
+        "Sources": dwi_ref.map(bids_uri).into_iter().collect::<Vec<_>>(),
         "GeneratedBy": [{
             "Name": meta.generated_by.name,
             "Version": meta.generated_by.version,
@@ -1334,7 +1358,7 @@ mod tests {
     /// that makes it AFD at all.
     #[test]
     fn bids_json_records_the_quantitative_scaling_terms() {
-        let j = bids_json(&quant_meta(), Path::new("/data/sub-01_dwi.nii.gz"), &affine_2mm());
+        let j = bids_json(&quant_meta(), Some(Path::new("/data/sub-01_dwi.nii.gz")), &affine_2mm());
 
         assert_eq!(j["FODScaling"], serde_json::json!("Absolute"));
         assert_eq!(j["QuantitativeFODScaling"], serde_json::json!(true));
@@ -1377,7 +1401,7 @@ mod tests {
             external_responses: false,
             ..quant_meta()
         };
-        let j = bids_json(&meta, Path::new("/data/sub-01_dwi.nii.gz"), &affine_2mm());
+        let j = bids_json(&meta, Some(Path::new("/data/sub-01_dwi.nii.gz")), &affine_2mm());
 
         assert_eq!(j["FODScaling"], serde_json::json!("PerVoxelB0"));
         assert_eq!(j["QuantitativeFODScaling"], serde_json::json!(false));
@@ -1402,7 +1426,7 @@ mod tests {
     /// full scale chain is auditable — and invertible — from the sidecar alone.
     #[test]
     fn bids_json_records_the_applied_normalization_scale() {
-        let j = bids_json(&quant_meta(), Path::new("/data/sub-01_dwi.nii.gz"), &affine_2mm());
+        let j = bids_json(&quant_meta(), Some(Path::new("/data/sub-01_dwi.nii.gz")), &affine_2mm());
         assert_eq!(j["IntensityNormalization"], serde_json::json!("mtnormalise"));
         assert_eq!(j["IntensityNormalizationScale"], serde_json::json!(0.0042));
         // The chain: raw b=0 (ReferenceB0Signal) × Scale ≈ stored-space b=0,
@@ -1416,7 +1440,7 @@ mod tests {
             intensity_normalization_scale: None,
             ..quant_meta()
         };
-        let j = bids_json(&meta, Path::new("/data/sub-01_dwi.nii.gz"), &affine_2mm());
+        let j = bids_json(&meta, Some(Path::new("/data/sub-01_dwi.nii.gz")), &affine_2mm());
         assert_eq!(j["IntensityNormalization"], serde_json::json!("mtnormalise"));
         assert!(j.get("IntensityNormalizationScale").is_none(), "{j}");
     }

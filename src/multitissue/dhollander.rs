@@ -174,7 +174,7 @@ impl Default for DhollanderSelectConfig {
 
 /// Voxel counts surviving each stage — the same numbers MRtrix prints, and the
 /// first thing to look at when a selection comes out wrong.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 pub struct DhollanderStageCounts {
     pub mask: usize,
     pub eroded: usize,

@@ -15,7 +15,9 @@
 
 use std::fmt::Display;
 
-use numpy::ndarray::{Array2, Array3, Array4};
+mod models;
+
+use numpy::ndarray::{Array3, Array4};
 use numpy::{
     IntoPyArray, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3, PyReadonlyArray4,
 };
@@ -392,6 +394,6 @@ fn _cs_dmri(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(qc_contrast_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(dti_fit_restore, m)?)?;
     m.add_function(wrap_pyfunction!(b0_mask, m)?)?;
-    let _ = Array2::<f64>::zeros((0, 0)); // keep the import for later modules
+    models::register(m)?;
     Ok(())
 }

@@ -89,7 +89,7 @@ impl Default for DhollanderConfig {
 }
 
 /// Per-tissue voxel selection counts (diagnostic).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 pub struct ResponseEstimationDiagnostics {
     pub n_brain_voxels: usize,
     pub n_wm_voxels: usize,
@@ -569,6 +569,12 @@ fn mean_b0(
 /// Write a `TissueResponse` to disk in MRtrix `dwi2response` `.txt` format
 /// (one row per shell, whitespace-separated zonal SH coefficients).
 pub fn write_response_txt(response: &TissueResponse, path: &Path) -> Result<()> {
+    fs::write(path, format_response_txt(response))?;
+    Ok(())
+}
+
+/// The text [`write_response_txt`] writes.
+pub fn format_response_txt(response: &TissueResponse) -> String {
     let mut content = String::new();
     content.push_str(&format!(
         "# cs-dmri Dhollander-2016 response (lmax={}, {} shells)\n",
@@ -586,8 +592,7 @@ pub fn write_response_txt(response: &TissueResponse, path: &Path) -> Result<()> 
         content.push_str(&words.join(" "));
         content.push('\n');
     }
-    fs::write(path, content)?;
-    Ok(())
+    content
 }
 
 #[cfg(test)]
