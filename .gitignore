@@ -26,3 +26,10 @@ rustc-ice-*.txt
 # Reference papers kept alongside the project. Never commit these — they are
 # third-party copyrighted PDFs, not source.
 literature/
+
+# Python bindings
+python/cs_dmri/_cs_dmri*.so
+python/cs_dmri/_cs_dmri*.pyd
+python/.venv/
+__pycache__/
+*.egg-info/

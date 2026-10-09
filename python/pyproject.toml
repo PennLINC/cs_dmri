@@ -1,0 +1,43 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "cs-dmri"
+# Version comes from [workspace.package].version in ../Cargo.toml.
+dynamic = ["version"]
+description = "Diffusion MRI quality control, SHORE compressed-sensing fits, RESTORE tensors and SS3T-CSD, in Rust"
+readme = "README.md"
+requires-python = ">=3.9"
+# Bulk of the package is MIT OR Apache-2.0. Two Rust modules ported from
+# MRtrix3 are MPL-2.0 and the q-space QC search adapted from dipy is BSD-3;
+# full texts are at the repository root (LICENSE-MIT, LICENSE-APACHE,
+# LICENSE-MRTRIX, LICENSE-DIPY).
+license = { text = "(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause" }
+authors = [{ name = "Matt Cieslak", email = "mattcieslak@gmail.com" }]
+keywords = ["diffusion-mri", "quality-control", "shore", "csd", "neuroimaging"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = ["numpy>=1.24", "nibabel>=5"]
+
+[project.optional-dependencies]
+dipy = ["dipy>=1.10"]
+test = ["pytest"]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+manifest-path = "Cargo.toml"
+python-source = "."
+module-name = "cs_dmri._cs_dmri"
