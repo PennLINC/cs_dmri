@@ -18,7 +18,6 @@ use cs_dmri::multitissue::ss3t::{Ss3tConfig, Ss3tResponses};
 use cs_dmri::multitissue::volume::{Ss3tFitConfig, fit_volume_ss3t_reporting};
 use cs_dmri::multitissue::TissueResponse;
 use cs_dmri::qspace::BvecFrame;
-use cs_dmri::solver::csd::CsdConfig;
 
 fn test_data_dir() -> Option<PathBuf> {
     let candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -49,7 +48,9 @@ fn ss3t_parity_against_mrtrix_reference() {
     };
     eprintln!("[ss3t_parity] test data: {}", data.display());
 
-    let stem = "sub-01_ses-1_space-ACPC";
+    // File-name stem of the test subject; set SS3T_PARITY_STEM to match the
+    // local data.
+    let stem = std::env::var("SS3T_PARITY_STEM").unwrap_or_else(|_| "sub-01_ses-1_space-ACPC".to_string());
     let dwi_path = data.join(format!("{stem}_desc-preproc_dwi.nii.gz"));
     let bval_path = data.join(format!("{stem}_desc-preproc_dwi.bval"));
     let bvec_path = data.join(format!("{stem}_desc-preproc_dwi.bvec"));
