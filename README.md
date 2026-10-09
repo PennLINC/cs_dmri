@@ -43,7 +43,7 @@ dwi = cs.DWI.from_files("dwi.nii.gz", "dwi.bval", "dwi.bvec", mask="mask.nii.gz"
 print(dwi.qc())                                  # image-quality metrics
 tensor = cs.RestoreModel(dwi.gtab).fit(dwi)      # FA, MD, ...
 shore = cs.ShoreModel(dwi.gtab).fit(dwi)         # 3D-SHORE
-shore.to_odx("shore.odx")
+shore.export("shore.odx")
 ```
 
 ```bash

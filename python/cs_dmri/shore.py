@@ -167,15 +167,26 @@ class ShoreFit:
             self.coefficients, self.radial_order, self.zeta, self.mask, directions, units=units,
             outlier_factor=outlier_factor, n_threads=n_threads)
 
-    def to_odx(self, path: str | PathLike, *, lmax: int | None = None, peaks: bool = True,
-               microstructure: bool = True, include_diagnostics: bool = True, directory: bool = False,
-               overwrite: bool = False, n_threads=None, **odx_options) -> None:
-        """Write an ODX (ODF SH, peaks, anisotropic power, GFA, microstructure
-        and diagnostics as per-voxel values), like ``cs-odf``."""
+    def export(self, path: str | PathLike, *, format: str | None = None, fixel_container: str = "nifti",
+               lmax: int | None = None, peaks: bool = True, microstructure: bool = True,
+               include_diagnostics: bool = True, overwrite: bool = False, n_threads=None,
+               **odx_options) -> None:
+        """Write the ODF SH, peaks, anisotropic power, GFA, microstructure and
+        diagnostics (as per-voxel values), like ``cs-odf``.
+
+        ``format`` is one of :data:`cs_dmri.EXPORT_FORMATS`; when omitted it is
+        inferred from the extension (``.odx``, ``.fz``, ``.fib.gz``, ``.pam5``,
+        ``.mif``/``.mif.gz``/``.nii``/``.nii.gz`` for MRtrix3 SH images).
+        Directory outputs (``"odx-directory"``, ``"mrtrix-fixel-dir"``) must be
+        named explicitly. ``fixel_container`` (``"nifti"`` or ``"mif"``) sets
+        the image format inside an MRtrix3 fixel directory. Formats other than
+        ODX keep the subset of the data they can represent.
+        """
         if self.affine is None:
-            raise ValueError("writing an ODX needs an affine")
+            raise ValueError("exporting needs an affine")
         if self.frame != "world":
-            raise ValueError("ODX is world-space: fit with bvec_frame='world' (the default when an affine is known)")
+            raise ValueError("exports are world-space: fit with bvec_frame='world' "
+                             "(the default when an affine is known)")
         dpvs = {}
         if include_diagnostics:
             for name in ("r2", "rmse", "alpha", "bic"):
@@ -183,10 +194,18 @@ class ShoreFit:
                     dpvs[name] = np.asarray(getattr(self, name), dtype=np.float32)
             if self.r2 is not None:
                 dpvs["sparsity"] = self.sparsity
-        _cs_dmri.shore_write_odx(
-            Path(path), self.coefficients, self.affine, self.radial_order, self.zeta, self.mask, lmax=lmax,
-            dpvs=dpvs, peaks=peaks, microstructure=microstructure, directory=directory, overwrite=overwrite,
-            n_threads=n_threads, **odx_options)
+        path = Path(path)
+        if path.exists() and not overwrite:
+            raise FileExistsError(f"refusing to overwrite {path}; pass overwrite=True")
+        _cs_dmri.shore_export(
+            Path(path), self.coefficients, self.affine, self.radial_order, self.zeta, self.mask, format=format,
+            fixel_container=fixel_container, lmax=lmax, dpvs=dpvs, peaks=peaks, microstructure=microstructure,
+            overwrite=overwrite, n_threads=n_threads, **odx_options)
+
+    def to_odx(self, path: str | PathLike, *, directory: bool = False, **options) -> None:
+        """Write an ODX archive, or an ODX directory with ``directory=True``.
+        Other keyword arguments are as for :meth:`export`."""
+        self.export(path, format="odx-directory" if directory else "odx-archive", **options)
 
     def save(self, path: str | PathLike, *, overwrite: bool = False) -> None:
         """Write the coefficient NIfTI, its JSON sidecar and diagnostic siblings

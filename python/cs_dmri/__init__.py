@@ -21,8 +21,20 @@ from .shore import ShoreFit, ShoreModel
 
 __version__ = _version()
 
+#: Output formats accepted by ``ShoreFit.export`` and ``SS3TFit.export``.
+EXPORT_FORMATS = (
+    "odx-archive",
+    "odx-directory",
+    "dsistudio-fz",
+    "dsistudio-fibgz",
+    "dipy-pam5",
+    "mrtrix-sh-image",
+    "mrtrix-fixel-dir",
+)
+
 __all__ = [
     "DWI",
+    "EXPORT_FORMATS",
     "GradientTable",
     "QCReport",
     "ResponseSet",

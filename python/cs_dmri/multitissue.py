@@ -182,16 +182,33 @@ class SS3TFit:
                                         balanced=balanced)
         return replace(self, wm=wm, gm=gm, csf=csf, normalization=diag)
 
-    def to_odx(self, path: str | PathLike, *, directory: bool = False, overwrite: bool = False) -> None:
-        """Write an ODX (WM SH glyphs, GM/CSF, mask, WM peaks), like ``cs-ss3t-full --odx``."""
+    def export(self, path: str | PathLike, *, format: str | None = None, fixel_container: str = "nifti",
+               overwrite: bool = False) -> None:
+        """Write the WM FOD SH, GM/CSF, mask and WM peaks, like
+        ``cs-ss3t-full --odx``.
+
+        ``format`` is one of :data:`cs_dmri.EXPORT_FORMATS`; when omitted it is
+        inferred from the extension. Directory outputs (``"odx-directory"``,
+        ``"mrtrix-fixel-dir"``) must be named explicitly. ``fixel_container``
+        (``"nifti"`` or ``"mif"``) sets the image format inside an MRtrix3
+        fixel directory.
+        """
         if self.affine is None:
-            raise ValueError("writing an ODX needs an affine")
+            raise ValueError("exporting needs an affine")
         if self.frame != "world":
-            raise ValueError("ODX is world-space: fit with bvec_frame='world' (the default when an affine is known)")
+            raise ValueError("exports are world-space: fit with bvec_frame='world' "
+                             "(the default when an affine is known)")
+        path = Path(path)
+        if path.exists() and not overwrite:
+            raise FileExistsError(f"refusing to overwrite {path}; pass overwrite=True")
         r = self.responses
-        _cs_dmri.ss3t_write_odx(Path(path), self.affine, self.mask, self.wm, self.gm, self.csf, self.lmax_wm,
-                                r.wm._pair(), r.gm._pair(), r.csf._pair(), directory=directory,
-                                overwrite=overwrite)
+        _cs_dmri.ss3t_export(Path(path), self.affine, self.mask, self.wm, self.gm, self.csf, self.lmax_wm,
+                             r.wm._pair(), r.gm._pair(), r.csf._pair(), format=format,
+                             fixel_container=fixel_container, overwrite=overwrite)
+
+    def to_odx(self, path: str | PathLike, *, directory: bool = False, overwrite: bool = False) -> None:
+        """Write an ODX archive, or an ODX directory with ``directory=True``."""
+        self.export(path, format="odx-directory" if directory else "odx-archive", overwrite=overwrite)
 
 
 def mtnormalise(wm, gm, csf, mask, *, target_sum: float | str = MTNORMALISE_TARGET, poly_order: int = 3,

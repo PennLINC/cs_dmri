@@ -12,3 +12,5 @@ First release.
 - Three-tissue response estimation, SS3T-CSD and multi-tissue intensity
   normalization.
 - Python interface.
+- Export of orientation results to ODX, DSI Studio, dipy PAM5 and MRtrix3
+  formats.

@@ -42,11 +42,33 @@ When a series is loaded, the following are checked:
 Conditions in the last group produce a {class}`~cs_dmri.SpatialWarning` and are
 listed in `DWI.warnings` and in the QC report.
 
-## ODX output
+## Output formats
 
-ODX files are written in canonical RAS+ voxel order. Spherical-harmonic
-coefficients use the MRtrix3 (Tournier) real basis. See the ODX documentation
-for the container format.
+Orientation results ({meth}`ShoreFit.export <cs_dmri.shore.ShoreFit.export>`,
+{meth}`SS3TFit.export <cs_dmri.multitissue.SS3TFit.export>`) can be written in
+the following formats, through the converters of odx-rs. Unless `format` is
+given, it is inferred from the file extension.
+
+| `format` | Extension | Contents |
+|---|---|---|
+| `odx-archive` | `.odx` | ODX zip archive: all arrays |
+| `odx-directory` | (directory) | ODX as a directory |
+| `dsistudio-fz` | `.fz` | DSI Studio fib (current format) |
+| `dsistudio-fibgz` | `.fib.gz` | DSI Studio fib (gzip-compressed MATLAB format) |
+| `dipy-pam5` | `.pam5` | dipy peaks and metrics |
+| `mrtrix-sh-image` | `.mif`, `.mif.gz`, `.nii`, `.nii.gz` | MRtrix3 SH image |
+| `mrtrix-fixel-dir` | (directory) | MRtrix3 fixel directory |
+
+ODX holds everything a fit produces. The other formats keep what they can
+represent: peaks and per-voxel values for DSI Studio and dipy, the SH
+coefficients for an MRtrix3 SH image, and peak directions with per-fixel values
+for a fixel directory (`fixel_container="mif"` writes `.mif` files inside it
+instead of NIfTI).
+
+ODX files are written in canonical RAS+ voxel order, and spherical-harmonic
+coefficients use the MRtrix3 (Tournier) real basis. PAM5 files store SH in
+dipy's default basis (`descoteaux07`, `legacy=True`) in the voxel frame of the
+file, as dipy expects. See the ODX documentation for the container format.
 
 ## Output files on the command line
 

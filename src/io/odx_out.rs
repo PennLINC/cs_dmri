@@ -35,6 +35,7 @@ use odx_rs::peak_finder::{PeakFinderConfig, SpherePeakFinder};
 use odx_rs::reference_affine::read_reference_affine;
 use odx_rs::sh_basis_evaluator::ShBasisKind;
 use odx_rs::stream::OdxBuilder;
+use odx_rs::OdxDataset;
 
 use std::time::Duration;
 
@@ -195,13 +196,14 @@ pub fn write_ss3t_odx(
 ) -> Result<()> {
     let raw_affine = read_reference_affine(dwi_ref)
         .map_err(|e| anyhow!("read affine from {:?}: {e}", dwi_ref))?;
+    let format = if directory { OutputFormat::OdxDirectory } else { OutputFormat::OdxArchive };
     write_ss3t_odx_with_affine(
-        output_path, raw_affine, mask, wm, gm, csf, lmax_wm, responses, overwrite, directory,
+        output_path, raw_affine, mask, wm, gm, csf, lmax_wm, responses, overwrite, format,
     )
 }
 
 /// [`write_ss3t_odx`] with the voxel-to-world affine given directly instead
-/// of read from the DWI NIfTI.
+/// of read from the DWI NIfTI, in any [`OutputFormat`].
 #[allow(clippy::too_many_arguments)]
 pub fn write_ss3t_odx_with_affine(
     output_path: &Path,
@@ -213,11 +215,11 @@ pub fn write_ss3t_odx_with_affine(
     lmax_wm: usize,
     responses: &Ss3tResponses,
     overwrite: bool,
-    directory: bool,
+    format: OutputFormat,
 ) -> Result<()> {
     write_multitissue_odx(
         output_path, raw_affine, None, mask, wm, gm, csf, lmax_wm, &responses.wm, &responses.gm,
-        &responses.csf, "ss3t_responses", None, None, overwrite, directory, 0.0, 0.0, None,
+        &responses.csf, "ss3t_responses", None, None, overwrite, format, 0.0, 0.0, None,
     )
 }
 
@@ -255,9 +257,10 @@ pub fn write_continuous_b_odx(
     let [wm_response, gm_response, csf_response] = responses;
     let raw_affine = read_reference_affine(dwi_ref)
         .map_err(|e| anyhow!("read affine from {:?}: {e}", dwi_ref))?;
+    let format = if directory { OutputFormat::OdxDirectory } else { OutputFormat::OdxArchive };
     write_multitissue_odx(
         output_path, raw_affine, Some(dwi_ref), mask, wm, gm, csf, lmax_wm, wm_response, gm_response,
-        csf_response, response_key, Some(b_step), floor, overwrite, directory,
+        csf_response, response_key, Some(b_step), floor, overwrite, format,
         peak_min_amplitude, peak_min_amplitude_frac, quant_meta,
     )
 }
@@ -286,7 +289,7 @@ fn write_multitissue_odx(
     // Flat noise-floor compartment (continuous-b only), one value per voxel.
     floor: Option<&Array4<f32>>,
     overwrite: bool,
-    directory: bool,
+    format: OutputFormat,
     peak_min_amplitude: f32,
     peak_min_amplitude_frac: f32,
     quant_meta: Option<&ContinuousBQuantMeta>,
@@ -482,21 +485,7 @@ fn write_multitissue_odx(
     let dataset = builder
         .finalize()
         .map_err(|e| anyhow!("ODX validation failed: {e}"))?;
-
-    if directory {
-        atomic_write_directory(output_path, overwrite, |tmp_dir| {
-            dataset
-                .save_directory(tmp_dir)
-                .map_err(|e| crate::CsDmriError::Other(format!("ODX directory write: {e}")))
-        })?;
-    } else {
-        atomic_write(output_path, overwrite, |tmp_path| {
-            dataset
-                .save_archive(tmp_path)
-                .map_err(|e| crate::CsDmriError::Other(format!("ODX archive write: {e}")))
-        })?;
-    }
-    Ok(())
+    write_dataset(&dataset, output_path, format, overwrite)
 }
 
 fn floats_to_le_bytes(xs: &[f32]) -> Vec<u8> {
@@ -1118,6 +1107,139 @@ pub fn build_shore_odx(
     })
 }
 
+/// On-disk format for an orientation dataset. The names follow `odx convert`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    /// ODX zip archive (`.odx`).
+    OdxArchive,
+    /// ODX directory tree.
+    OdxDirectory,
+    /// DSI Studio `.fz` (quantized).
+    DsiStudioFz,
+    /// DSI Studio `.fib.gz` (quantized).
+    DsiStudioFibGz,
+    /// dipy peaks-and-metrics HDF5 (`.pam5`).
+    DipyPam5,
+    /// MRtrix3 SH image (`.mif`, `.mif.gz`, `.nii`, `.nii.gz`) of the ODF/FOD
+    /// coefficients.
+    MrtrixShImage,
+    /// MRtrix3 fixel directory; `mif` selects `.mif` instead of NIfTI files.
+    MrtrixFixelDirectory { mif: bool },
+}
+
+impl OutputFormat {
+    /// Format implied by a file name, if any: `.odx`, `.fz`, `.fib.gz`,
+    /// `.pam5`, or an SH image (`.mif`, `.mif.gz`, `.nii`, `.nii.gz`).
+    pub fn infer(path: &Path) -> Option<Self> {
+        let name = path.file_name()?.to_string_lossy().to_lowercase();
+        let ends = |e: &str| name.ends_with(e);
+        Some(if ends(".odx") {
+            Self::OdxArchive
+        } else if ends(".fz") {
+            Self::DsiStudioFz
+        } else if ends(".fib.gz") {
+            Self::DsiStudioFibGz
+        } else if ends(".pam5") {
+            Self::DipyPam5
+        } else if ends(".mif") || ends(".mif.gz") || ends(".nii") || ends(".nii.gz") {
+            Self::MrtrixShImage
+        } else {
+            return None;
+        })
+    }
+
+    /// Parse an `odx convert` format name (`odx-archive`, `odx-directory`,
+    /// `dsistudio-fz`, `dsistudio-fibgz`, `dipy-pam5`, `mrtrix-sh-image`,
+    /// `mrtrix-fixel-dir`).
+    pub fn from_name(name: &str, fixel_container_mif: bool) -> Result<Self> {
+        Ok(match name {
+            "odx-archive" => Self::OdxArchive,
+            "odx-directory" => Self::OdxDirectory,
+            "dsistudio-fz" => Self::DsiStudioFz,
+            "dsistudio-fibgz" => Self::DsiStudioFibGz,
+            "dipy-pam5" => Self::DipyPam5,
+            "mrtrix-sh-image" => Self::MrtrixShImage,
+            "mrtrix-fixel-dir" => Self::MrtrixFixelDirectory { mif: fixel_container_mif },
+            other => return Err(anyhow!(
+                "unknown output format {other:?}; expected one of odx-archive, odx-directory, \
+                 dsistudio-fz, dsistudio-fibgz, dipy-pam5, mrtrix-sh-image, mrtrix-fixel-dir"
+            )),
+        })
+    }
+
+    pub fn is_directory(&self) -> bool {
+        matches!(self, Self::OdxDirectory | Self::MrtrixFixelDirectory { .. })
+    }
+}
+
+/// Write `dataset` to `path` in `format`, atomically (a temporary sibling is
+/// renamed into place). Existing outputs are replaced only with `overwrite`.
+pub fn write_dataset(dataset: &OdxDataset, path: &Path, format: OutputFormat, overwrite: bool) -> Result<()> {
+    use odx_rs::interop::save_dsistudio_from_odx;
+    use odx_rs::mrtrix::{
+        MrtrixFixelContainer, MrtrixFixelWriteOptions, MrtrixShContainer, MrtrixShWriteOptions,
+        save_mrtrix_fixels, save_mrtrix_sh,
+    };
+    use odx_rs::{DsistudioFormat, MrtrixToDsistudioOptions};
+    let wrap = |what: &'static str| move |e: odx_rs::OdxError| crate::CsDmriError::Other(format!("{what}: {e}"));
+    let write_file = |tmp: &Path| -> crate::Result<()> {
+        match format {
+            OutputFormat::OdxArchive => dataset.save_archive(tmp).map_err(wrap("ODX archive write")),
+            OutputFormat::DsiStudioFz | OutputFormat::DsiStudioFibGz => {
+                let options = MrtrixToDsistudioOptions {
+                    output_format: if format == OutputFormat::DsiStudioFz {
+                        DsistudioFormat::Fz
+                    } else {
+                        DsistudioFormat::FibGz
+                    },
+                    ..MrtrixToDsistudioOptions::default()
+                };
+                save_dsistudio_from_odx(dataset, tmp, &options).map_err(wrap("DSI Studio write"))
+            }
+            OutputFormat::DipyPam5 => {
+                odx_rs::pam::save_pam5(dataset, tmp, &odx_rs::pam::PamWriteOptions::default()).map_err(wrap("PAM5 write"))
+            }
+            OutputFormat::MrtrixShImage => {
+                let name = path.to_string_lossy().to_lowercase();
+                let options = MrtrixShWriteOptions {
+                    array_name: "coefficients".into(),
+                    container: if name.ends_with(".nii") || name.ends_with(".nii.gz") {
+                        MrtrixShContainer::Nifti1
+                    } else {
+                        MrtrixShContainer::Mif
+                    },
+                    gzip: name.ends_with(".gz"),
+                };
+                save_mrtrix_sh(dataset, tmp, &options).map_err(wrap("MRtrix SH write"))
+            }
+            OutputFormat::OdxDirectory | OutputFormat::MrtrixFixelDirectory { .. } => unreachable!(),
+        }
+    };
+    match format {
+        OutputFormat::OdxDirectory => atomic_write_directory(path, overwrite, |tmp| {
+            dataset.save_directory(tmp).map_err(wrap("ODX directory write"))
+        })?,
+        OutputFormat::MrtrixFixelDirectory { mif } => atomic_write_directory(path, overwrite, |tmp| {
+            let options = MrtrixFixelWriteOptions {
+                container: if mif { MrtrixFixelContainer::Mif } else { MrtrixFixelContainer::Nifti },
+                include_dpf: true,
+                include_dpv: false,
+            };
+            save_mrtrix_fixels(dataset, tmp, &options).map_err(wrap("MRtrix fixel write"))
+        })?,
+        _ => atomic_write(path, overwrite, write_file)?,
+    }
+    Ok(())
+}
+
+/// Finalize an [`OdxBuilder`] and write it with [`write_dataset`].
+pub fn finalize_and_write(builder: OdxBuilder, output_path: &Path, format: OutputFormat, overwrite: bool) -> Result<()> {
+    let dataset = builder
+        .finalize()
+        .map_err(|e| anyhow!("ODX validation failed: {e}"))?;
+    write_dataset(&dataset, output_path, format, overwrite)
+}
+
 /// Finalize the dataset and write it atomically. Thin convenience wrapper
 /// shared by cs-fit and cs-odf. Set `directory` to write a directory tree
 /// instead of a `.odx` zip archive.
@@ -1127,23 +1249,8 @@ pub fn finalize_and_write_odx(
     overwrite: bool,
     directory: bool,
 ) -> Result<()> {
-    let dataset = builder
-        .finalize()
-        .map_err(|e| anyhow!("ODX validation failed: {e}"))?;
-    if directory {
-        atomic_write_directory(output_path, overwrite, |tmp_dir| {
-            dataset
-                .save_directory(tmp_dir)
-                .map_err(|e| crate::CsDmriError::Other(format!("ODX directory write: {e}")))
-        })?;
-    } else {
-        atomic_write(output_path, overwrite, |tmp_path| {
-            dataset
-                .save_archive(tmp_path)
-                .map_err(|e| crate::CsDmriError::Other(format!("ODX archive write: {e}")))
-        })?;
-    }
-    Ok(())
+    let format = if directory { OutputFormat::OdxDirectory } else { OutputFormat::OdxArchive };
+    finalize_and_write(builder, output_path, format, overwrite)
 }
 
 /// Auto-detect a brain mask from a 4-D coefficient volume: any voxel whose

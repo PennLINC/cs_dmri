@@ -69,3 +69,9 @@
 .. autofunction:: cs_dmri.multitissue.mtnormalise
 .. autofunction:: cs_dmri.multitissue.ss3t_pipeline
 ```
+
+## Output formats
+
+```{eval-rst}
+.. autodata:: cs_dmri.EXPORT_FORMATS
+```

@@ -11,7 +11,7 @@ deconvolution, and multi-tissue intensity normalization.
 responses = dwi.estimate_responses()
 fit = cs.SS3TModel(dwi.gtab, responses, lmax_wm=8).fit(dwi)
 fit = fit.mtnormalise()
-fit.to_odx("ss3t.odx")
+fit.export("ss3t.odx")             # or .fz, .fib.gz, .pam5, .mif, ...
 
 fit = cs.ss3t_pipeline(dwi)        # the three steps in one call
 ```

@@ -28,6 +28,31 @@ fn put<'py, T: numpy::Element, D: numpy::ndarray::Dimension>(
     d.set_item(k, a.into_pyarray_bound(d.py()))
 }
 
+/// Output format from an explicit `odx convert`-style name, or inferred from
+/// the file extension.
+fn resolve_format(
+    path: &std::path::Path,
+    format: Option<&str>,
+    fixel_container: &str,
+) -> PyResult<cs_dmri::io::odx_out::OutputFormat> {
+    use cs_dmri::io::odx_out::OutputFormat;
+    let mif = match fixel_container {
+        "nifti" => false,
+        "mif" => true,
+        other => return Err(map_err(format!("fixel_container must be 'nifti' or 'mif', got {other:?}"))),
+    };
+    match format {
+        Some(name) => OutputFormat::from_name(name, mif).map_err(map_err),
+        None => OutputFormat::infer(path).ok_or_else(|| {
+            map_err(format!(
+                "cannot infer the output format from {:?}; use a .odx, .fz, .fib.gz, .pam5, .mif(.gz) or \
+                 .nii(.gz) extension, or pass format= (e.g. 'odx-directory' or 'mrtrix-fixel-dir')",
+                path
+            ))
+        }),
+    }
+}
+
 /// Unit 3×3 rotation of an affine (columns normalized), the matrix the CLI
 /// uses to rotate image-axis bvecs into world RAS.
 #[pyfunction]
@@ -309,14 +334,16 @@ pub fn shore_microstructure<'py>(
     Ok(d)
 }
 
-/// Write SHORE coefficients as an ODX (canonical RAS+), like `cs-odf`.
+/// Write SHORE-derived ODFs, peaks and scalars (canonical RAS+) in any
+/// supported format: ODX, DSI Studio, dipy PAM5 or MRtrix3.
 #[pyfunction]
-#[pyo3(signature = (path, coefficients, affine, radial_order, zeta, mask=None, *, lmax=None, dpvs=None,
-    peaks=true, npeaks=5, peak_relative_threshold=0.5, peak_min_separation_deg=25.0, global_normalize=true,
-    anisotropic_power=true, microstructure=true, units="um", outlier_factor=Some(10.0),
-    field_name=String::from("coefficients"), directory=false, overwrite=false, n_threads=None))]
+#[pyo3(signature = (path, coefficients, affine, radial_order, zeta, mask=None, *, format=None,
+    fixel_container="nifti", lmax=None, dpvs=None, peaks=true, npeaks=5, peak_relative_threshold=0.5,
+    peak_min_separation_deg=25.0, global_normalize=true, anisotropic_power=true, microstructure=true,
+    units="um", outlier_factor=Some(10.0), field_name=String::from("coefficients"), overwrite=false,
+    n_threads=None))]
 #[allow(clippy::too_many_arguments)]
-pub fn shore_write_odx<'py>(
+pub fn shore_export<'py>(
     py: Python<'py>,
     path: PathBuf,
     coefficients: PyReadonlyArray4<'py, f32>,
@@ -324,6 +351,8 @@ pub fn shore_write_odx<'py>(
     radial_order: u32,
     zeta: f64,
     mask: Option<PyReadonlyArray3<'py, bool>>,
+    format: Option<&str>,
+    fixel_container: &str,
     lmax: Option<u32>,
     dpvs: Option<HashMap<String, PyReadonlyArray3<'py, f32>>>,
     peaks: bool,
@@ -336,14 +365,14 @@ pub fn shore_write_odx<'py>(
     units: &str,
     outlier_factor: Option<f32>,
     field_name: String,
-    directory: bool,
     overwrite: bool,
     n_threads: Option<usize>,
 ) -> PyResult<()> {
     use cs_dmri::io::microstructure::{MicrostructureOptions, MicrostructureOutlierRejection, MicrostructureUnits};
     use cs_dmri::io::odx_out::{
-        ShoreOdxOptions, ShoreOdxPeakOpts, ShoreToOdxOptions, finalize_and_write_odx, shore_coeffs_to_odx,
+        ShoreOdxOptions, ShoreOdxPeakOpts, ShoreToOdxOptions, finalize_and_write, shore_coeffs_to_odx,
     };
+    let out_format = resolve_format(&path, format, fixel_container)?;
     let aff = affine_from(affine)?;
     let basis = ShoreBasis::new(radial_order, zeta);
     let c = coefficients.as_array().to_owned();
@@ -381,7 +410,7 @@ pub fn shore_write_odx<'py>(
     run(py, n_threads, || -> anyhow::Result<()> {
         let refs: Vec<(&str, &Array3<f32>)> = dpv_owned.iter().map(|(k, v)| (k.as_str(), v)).collect();
         let out = shore_coeffs_to_odx(&c, aff, m.as_ref(), &basis, &refs, &opts)?;
-        finalize_and_write_odx(out.build.builder, &path, overwrite, directory)
+        finalize_and_write(out.build.builder, &path, out_format, overwrite)
     })?
     .map_err(map_err)
 }
@@ -623,11 +652,12 @@ pub fn mtnormalise<'py>(
     ))
 }
 
-/// Write SS3T tissue maps as an ODX (WM SH glyphs, GM/CSF, peaks).
+/// Write SS3T tissue maps (WM FOD SH, GM/CSF, WM peaks) in any supported
+/// format: ODX, DSI Studio, dipy PAM5 or MRtrix3.
 #[pyfunction]
-#[pyo3(signature = (path, affine, mask, wm, gm, csf, lmax_wm, wm_response, gm_response, csf_response, *, directory=false, overwrite=false))]
+#[pyo3(signature = (path, affine, mask, wm, gm, csf, lmax_wm, wm_response, gm_response, csf_response, *, format=None, fixel_container="nifti", overwrite=false))]
 #[allow(clippy::too_many_arguments)]
-pub fn ss3t_write_odx<'py>(
+pub fn ss3t_export<'py>(
     py: Python<'py>,
     path: PathBuf,
     affine: PyReadonlyArray2<'py, f64>,
@@ -639,9 +669,11 @@ pub fn ss3t_write_odx<'py>(
     wm_response: (PyReadonlyArray2<'py, f64>, usize),
     gm_response: (PyReadonlyArray2<'py, f64>, usize),
     csf_response: (PyReadonlyArray2<'py, f64>, usize),
-    directory: bool,
+    format: Option<&str>,
+    fixel_container: &str,
     overwrite: bool,
 ) -> PyResult<()> {
+    let out_format = resolve_format(&path, format, fixel_container)?;
     let aff = affine_from(affine)?;
     let responses = Ss3tResponses {
         wm: response_from(wm_response.0, wm_response.1),
@@ -653,7 +685,7 @@ pub fn ss3t_write_odx<'py>(
     let c = csf.as_array().to_owned().insert_axis(Axis(3));
     run(py, None, || {
         cs_dmri::io::odx_out::write_ss3t_odx_with_affine(
-            &path, aff, &m, &w, &g, &c, lmax_wm, &responses, overwrite, directory,
+            &path, aff, &m, &w, &g, &c, lmax_wm, &responses, overwrite, out_format,
         )
     })?
     .map_err(map_err)
@@ -665,12 +697,12 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(shore_odf_sh, m)?)?;
     m.add_function(wrap_pyfunction!(shore_predict, m)?)?;
     m.add_function(wrap_pyfunction!(shore_microstructure, m)?)?;
-    m.add_function(wrap_pyfunction!(shore_write_odx, m)?)?;
+    m.add_function(wrap_pyfunction!(shore_export, m)?)?;
     m.add_function(wrap_pyfunction!(response_from_text, m)?)?;
     m.add_function(wrap_pyfunction!(response_to_text, m)?)?;
     m.add_function(wrap_pyfunction!(estimate_responses, m)?)?;
     m.add_function(wrap_pyfunction!(ss3t_fit, m)?)?;
     m.add_function(wrap_pyfunction!(mtnormalise, m)?)?;
-    m.add_function(wrap_pyfunction!(ss3t_write_odx, m)?)?;
+    m.add_function(wrap_pyfunction!(ss3t_export, m)?)?;
     Ok(())
 }

@@ -21,11 +21,11 @@ fa_img = dwi.to_image(tensor.fa)        # nibabel image on the input grid
 
 # 3D-SHORE
 shore = cs.ShoreModel(dwi.gtab, radial_order=6).fit(dwi)
-shore.to_odx("shore.odx")
+shore.export("shore.odx")
 
 # Single-shell three-tissue CSD (single-shell data)
 ss3t = cs.ss3t_pipeline(dwi)
-ss3t.to_odx("ss3t.odx")
+ss3t.export("ss3t.fz")                  # for DSI Studio
 ```
 
 A {class}`~cs_dmri.dwi.DWI` holds the data, gradient table, affine and mask of

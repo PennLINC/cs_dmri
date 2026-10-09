@@ -96,7 +96,8 @@ Synthesis
   ({meth}`~cs_dmri.shore.ShoreFit.predict`, `cs-synth`), for example to compare
   a fit with held-out measurements or to predict another acquisition scheme.
 
-ODX output
-: {meth}`~cs_dmri.shore.ShoreFit.to_odx` and `cs-odf` (or `cs-fit
+Output
+: {meth}`~cs_dmri.shore.ShoreFit.export` and `cs-odf` (or `cs-fit
   --odx-output`) write the ODF coefficients, peaks, scalars and diagnostics to
-  an ODX file in RAS+ orientation.
+  an ODX file in RAS+ orientation. From Python the same results can also be
+  written for DSI Studio, dipy or MRtrix3 (see {doc}`conventions`).
