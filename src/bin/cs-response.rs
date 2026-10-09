@@ -2,11 +2,11 @@
 //! `cs-response`: WM/GM/CSF response-function estimation for SS3T.
 //!
 //! Implements the Dhollander 2016 unsupervised three-tissue response
-//! algorithm (ISMRM Workshop abstract) using cs-dmri's RESTORE DTI fit
+//! algorithm (ISMRM Workshop abstract) using cs_dmri's RESTORE DTI fit
 //! for the underlying scalar maps. Outputs three MRtrix-format `.txt`
 //! files that drop directly into `cs-ss3t --response-{wm,gm,csf}`.
 //!
-//! License posture: the per-tissue averaging is cs-dmri's own, written from
+//! License posture: the per-tissue averaging is cs_dmri's own, written from
 //! the Dhollander 2016 abstract. The voxel selection it calls is a port of
 //! MRtrix's `dwi2response dhollander` (MPL-2.0), confined to
 //! `src/multitissue/dhollander.rs`.
@@ -29,7 +29,7 @@ use cs_dmri::{
 };
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Dhollander-2016 three-tissue response estimation (cs-dmri)")]
+#[command(version, about = "Dhollander-2016 three-tissue response estimation (cs_dmri)")]
 struct Cli {
     /// 4D DWI NIfTI input (one b=0 shell + one DWI shell).
     #[arg(long)]

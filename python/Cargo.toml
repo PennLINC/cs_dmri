@@ -1,9 +1,9 @@
 [package]
-name = "cs-dmri-py"
+name = "cs_dmri_py"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Python bindings for cs-dmri (built with maturin; not published as a Rust crate)"
+description = "Python bindings for cs_dmri (built with maturin; not published as a Rust crate)"
 publish = false
 
 [lib]
@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # No mimalloc: the allocator is the host interpreter's business.
-cs-dmri = { path = "..", default-features = false }
+cs_dmri = { path = "..", default-features = false }
 odx-rs = { git = "https://github.com/PennLINC/odx-rs", tag = "v0.2.0" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
 numpy = "0.22"

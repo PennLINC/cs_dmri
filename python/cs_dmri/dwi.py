@@ -36,7 +36,7 @@ class DWI:
         Brain mask. Without one, :attr:`effective_mask` falls back to
         :attr:`b0_mask`.
     header : nibabel header, optional
-        The source NIfTI header. Everything cs-dmri writes for this series
+        The source NIfTI header. Everything cs_dmri writes for this series
         uses it as the template, so qform/sform codes and units survive.
         :meth:`from_files` / :meth:`from_nibabel` set it.
 

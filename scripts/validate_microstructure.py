@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT OR Apache-2.0
-"""Cross-validate cs-dmri's BrainSuiteSHORE microstructure scalars against
+"""Cross-validate cs_dmri's BrainSuiteSHORE microstructure scalars against
 analytical multi-tensor truth and dipy iso-MAPMRI on the same simulated data.
 
 Run inside the qsirecon conda env::
@@ -22,8 +22,8 @@ The script:
 
 Outputs:
 
-* ``cs-dmri/tests/figures/microstructure_validation.png``
-* ``cs-dmri/tests/figures/microstructure_validation.csv``
+* ``cs_dmri/tests/figures/microstructure_validation.png``
+* ``cs_dmri/tests/figures/microstructure_validation.csv``
 """
 
 from __future__ import annotations
@@ -156,7 +156,7 @@ def synthesize_dwi(
 
 
 # ---------------------------------------------------------------------------
-# cs-dmri pipeline runners
+# cs_dmri pipeline runners
 # ---------------------------------------------------------------------------
 
 def run(cmd, **kwargs):
@@ -230,7 +230,7 @@ def fit_dipy_iso_mapmri(data, gtab, big_delta, small_delta, radial_order):
     NG is intentionally omitted: dipy disallows ``ng()`` in iso mode (the iso
     basis lacks a tensor-aligned (0,0,0) mode, so the iso NG estimate is
     *anisotropy-biased* rather than non-Gaussianity-biased and the dipy authors
-    chose to fail-fast). cs-dmri reports the same iso-frame NG for inspection
+    chose to fail-fast). cs_dmri reports the same iso-frame NG for inspection
     but it should be interpreted as "departure from isotropic Gaussian", not
     propagator non-Gaussianity in the strict sense.
     """
@@ -327,7 +327,7 @@ def main():
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    # b-values matching a typical cs-dmri input.
+    # b-values matching a typical cs_dmri input.
     bvals_shells = [1000.0, 2000.0, 3000.0, 4000.0]
     bvals, bvecs, big_delta, small_delta = build_gtab(
         bvals=bvals_shells,
@@ -371,7 +371,7 @@ def main():
         np.savetxt(workdir / "dwi.bval", bvals.reshape(1, -1), fmt="%.4f")
         np.savetxt(workdir / "dwi.bvec", bvecs.T, fmt="%.6f")
 
-        # Run cs-dmri.
+        # Run cs_dmri.
         coeffs_path, odx_path = run_cs_dmri(
             cs_dmri_root=args.cs_dmri_root,
             workdir=workdir,

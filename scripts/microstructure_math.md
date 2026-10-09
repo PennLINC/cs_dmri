@@ -7,7 +7,7 @@ from scratch.
 
 ## 1. Basis equivalence
 
-BrainSuiteSHORE (cs-dmri / qsirecon) and dipy isotropic MAPMRI use the *same*
+BrainSuiteSHORE (cs_dmri / qsirecon) and dipy isotropic MAPMRI use the *same*
 spherical-SHORE family — generalized Laguerre × Gaussian × real spherical
 harmonic — with two cosmetic differences: the parameterization of the radial
 scale and the truncation of the radial index set.
@@ -105,7 +105,7 @@ $j = n-\ell+1$ for *every* BrainSuite mode and sum.
 
 The dipy `_mapmri_coef` is divided by $\sum_i c_i B_i$ (line 346, 453 of
 `dipy/reconst/mapmri.py`) so that the predicted propagator integrates to 1
-(equivalently, predicted $E(0)=1$). cs-dmri does *not* normalize the DWI
+(equivalently, predicted $E(0)=1$). cs_dmri does *not* normalize the DWI
 signal before fitting, so before any scalar evaluation we must divide the
 coefficient block by the predicted $E(0)$:
 
@@ -280,19 +280,19 @@ A future version could project $\tilde c$ onto a tensor frame first.
 ### PA
 
 PA was originally formulated as a change of basis between an *anisotropic*
-MAPMRI fit and an isotropic SHORE fit. cs-dmri only carries the isotropic
+MAPMRI fit and an isotropic SHORE fit. cs_dmri only carries the isotropic
 SHORE fit, so the PA closed form is degenerate (the change-of-basis is the
 identity and PA collapses to NG-style energy ratios). Skipped in v1 — adding
 PA would require fitting the anisotropic MAPMRI variant alongside, which is
 out of scope for this change.
 
-## 4. Unit conventions: cs-dmri vs TORTOISE
+## 4. Unit conventions: cs_dmri vs TORTOISE
 
-cs-dmri inherits dipy's q-space convention: b-values in s/mm², deltas in
+cs_dmri inherits dipy's q-space convention: b-values in s/mm², deltas in
 seconds, so $q = \sqrt{b/(4\pi^2\tau)}$ comes out in **1/mm**. Every length-
 density scalar therefore carries an mm-based unit:
 
-| scalar | dim | cs-dmri / dipy units (default `--scalar-units mm`) | TORTOISE units (default `--scalar-units um`) | conversion |
+| scalar | dim | cs_dmri / dipy units (default `--scalar-units mm`) | TORTOISE units (default `--scalar-units um`) | conversion |
 |--------|-----|------------------------------------------|----------------------------------|--------------|
 | RTOP | $1/L^3$ | mm⁻³ | μm⁻³ | × $10^{-9}$ |
 | RTAP | $1/L^2$ | mm⁻² | μm⁻² | × $10^{-6}$ |
@@ -311,7 +311,7 @@ $2 \times 10^{-4}$ μm⁻³ — the latter is what TORTOISE viewers display as
 "in the [0, ~few-percent] range".
 
 `cs-odf --microstructure --scalar-units um` (the default) emits TORTOISE-
-compatible magnitudes; `--scalar-units mm` keeps the dipy/cs-dmri-internal
+compatible magnitudes; `--scalar-units mm` keeps the dipy/cs_dmri internal
 convention for cross-checking against dipy's `MapmriModel.fit().rtop()` etc.
 
 ## 5. Sanity checks

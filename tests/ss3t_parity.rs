@@ -2,7 +2,7 @@
 //! Parity test: cs-ss3t vs MRtrix3Tissue reference outputs.
 //!
 //! Local-only, opt-in via `cargo test --release -- --ignored ss3t_parity`.
-//! Requires the test bundle at `<repo>/../ss3t_test_data/` (sibling of cs-dmri).
+//! Requires the test bundle at `<repo>/../ss3t_test_data/` (sibling of cs_dmri).
 //! Writes cs-ss3t NIfTIs and reference-derived NIfTIs to
 //! `target/ss3t_parity/` for off-line inspection.
 //!
@@ -42,7 +42,7 @@ fn ss3t_parity_against_mrtrix_reference() {
         Some(d) => d,
         None => {
             eprintln!(
-                "[ss3t_parity] skipping: ss3t_test_data/ not found alongside cs-dmri/"
+                "[ss3t_parity] skipping: ss3t_test_data/ not found alongside cs_dmri/"
             );
             return;
         }

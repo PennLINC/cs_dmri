@@ -20,7 +20,7 @@ use nifti::writer::WriterOptions;
 use odx_rs::reference_affine::read_reference_affine;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Synthesize a DWI from cs-dmri coefficients")]
+#[command(version, about = "Synthesize a DWI from cs_dmri coefficients")]
 struct Cli {
     /// Coefficients NIfTI written by `cs-fit`. Sidecar JSON is read from the
     /// matching `.json` next to it.

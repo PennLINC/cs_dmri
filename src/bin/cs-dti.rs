@@ -88,7 +88,7 @@ struct Cli {
     diagnostics: bool,
 
     /// Keep bvecs in their FSL/image-axis frame instead of rotating them
-    /// into world-RAS. The default rotation matches the rest of cs-dmri.
+    /// into world-RAS. The default rotation matches the rest of cs_dmri.
     #[arg(long)]
     no_bvec_rotation: bool,
 

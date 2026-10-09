@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT OR Apache-2.0
-"""Benchmark cs-dmri fit options on real DWI.
+"""Benchmark cs_dmri fit options on real DWI.
 
 For each (bundle, config) pair: runs cs-fit, then cs-odf, then `odx qc`,
 captures wall times, then reads the resulting NIfTIs/JSON to extract
@@ -33,7 +33,7 @@ import numpy as np
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CS_DMRI = REPO_ROOT / "cs-dmri"
+CS_DMRI = REPO_ROOT / "cs_dmri"
 ODX_RS = REPO_ROOT / "odx-rs"
 
 CS_FIT = CS_DMRI / "target" / "release" / "cs-fit"
@@ -668,7 +668,7 @@ def write_summary(all_rows: list[dict], path_md: Path, path_csv: Path) -> None:
         ]
 
     out = [
-        "# cs-dmri benchmark — multi-bundle summary",
+        "# cs_dmri benchmark — multi-bundle summary",
         "",
         f"Bundles: {len(bundles)}. Configs: {', '.join(configs)}.",
         "",

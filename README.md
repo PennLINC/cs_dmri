@@ -1,10 +1,10 @@
-# cs-dmri
+# cs_dmri
 
 Compressed-sensing reconstruction of diffusion MRI data with the 3D-SHORE basis.
 
 ## What it does
 
-`cs-dmri` is a Rust crate plus nine command-line tools that:
+`cs_dmri` is a Rust crate plus nine command-line tools that:
 
 1. **Fit** raw 4D DWI volumes to a regularized 3D-SHORE coefficient field (`cs-fit`),
 2. **Project** those coefficients to Orientation Distribution Functions and fixels in the [ODX](../odx-rs) format (`cs-odf`),
@@ -20,7 +20,7 @@ The first three form the SHORE-basis compressed-sensing pipeline; `cs-fit`'s out
 
 `cs-ss3t` is a separate, native-Rust port of the SS3T-CSD algorithm (Dhollander & Connelly, ISMRM 2016) that replaces the MRtrix3Tissue fork. The inner constrained-least-squares solve uses the Goldfarb-Idnani 1983 active-set method; per-voxel agreement against MRtrix3Tissue's reference output is r > 0.99 (see [tests/ss3t_parity.rs](tests/ss3t_parity.rs)).
 
-`cs-response`, `cs-dti`, `cs-mtnorm`, and `cs-ss3t-full` close the loop on the SS3T pipeline: cs-dmri runs the entire single-shell three-tissue workflow end-to-end without any external MRtrix tooling. The whole pipeline is a single command (`cs-ss3t-full`); the individual stages are exposed as separate tools when more control is needed. `cs-dti` is also useful standalone for clinical FA/MD maps with motion-outlier QC channels.
+`cs-response`, `cs-dti`, `cs-mtnorm`, and `cs-ss3t-full` close the loop on the SS3T pipeline: cs_dmri runs the entire single-shell three-tissue workflow end-to-end without any external MRtrix tooling. The whole pipeline is a single command (`cs-ss3t-full`); the individual stages are exposed as separate tools when more control is needed. `cs-dti` is also useful standalone for clinical FA/MD maps with motion-outlier QC channels.
 
 ## Build
 
@@ -101,7 +101,7 @@ and the synthetic-harness comparison in
 
 ## Python
 
-`pip install cs-dmri` (or `maturin develop --release` inside `python/`) gives a
+`pip install cs_dmri` (or `maturin develop --release` inside `python/`) gives a
 dipy-style Python API over everything below, with results identical to the
 command-line tools:
 
@@ -270,7 +270,7 @@ Reads a coefficient NIfTI (and its sidecar) from `cs-fit`, applies the analytica
 | `--microstructure-nifti` | off | Also write each scalar to a sibling NIfTI of the ODX (`<output_stem>_rtop.nii.gz`, …). Aliased to the legacy `--microstructure`. |
 | `--microstructure-outlier-factor <K>` | `10.0` | Voxels whose scalar exceeds `K × p99` (per scalar, brain-wide) are NaN'd as fit failures. With `p99/median ≈ 8`, K=10 corresponds to "more than ~80× the median is implausible." Tune higher to keep more, lower to reject more. K=5 trims the marginal upper tail; K=20+ catches only the most catastrophic failures. |
 | `--no-microstructure-outlier-rejection` | off | Disable the rejection — every finite scalar value lands in the ODX, including the implausible ones. Use only for debugging fit quality or comparing against legacy outputs. |
-| `--scalar-units {um,mm}` | `um` | Length unit for emitted microstructure scalars. `um` matches TORTOISE's `EstimateMAPMRI` output (q in 1/μm → RTOP in /μm³, etc.) and lands values in the familiar [0, ~few] range. `mm` keeps the dipy / cs-dmri-internal convention (q in 1/mm → RTOP in /mm³ ~ 10⁵ for brain). Physically equivalent — only the displayed magnitudes differ. |
+| `--scalar-units {um,mm}` | `um` | Length unit for emitted microstructure scalars. `um` matches TORTOISE's `EstimateMAPMRI` output (q in 1/μm → RTOP in /μm³, etc.) and lands values in the familiar [0, ~few] range. `mm` keeps the dipy / cs_dmri internal convention (q in 1/mm → RTOP in /mm³ ~ 10⁵ for brain). Physically equivalent — only the displayed magnitudes differ. |
 | `--threads` | auto | Cap rayon's worker pool. Default: `$SLURM_CPUS_PER_TASK` → `$RAYON_NUM_THREADS` → all logical CPUs. |
 | `--overwrite` | off | Allow clobbering an existing ODX, output directory, or sibling microstructure NIfTI. |
 | `--quiet` | off | Suppress progress heartbeat and per-step summary lines. |
@@ -383,11 +383,11 @@ The outlier-fraction map is an underused but powerful QC channel. Healthy clinic
 
 ## `cs-response` — WM/GM/CSF response estimation (Dhollander 2016)
 
-Implements the Dhollander 2016 unsupervised three-tissue response estimation algorithm (ISMRM Workshop abstract) using cs-dmri's RESTORE DTI fit for the underlying FA/MD/eigenvalue maps. Outputs three MRtrix-format `.txt` files that drop directly into `cs-ss3t --response-{wm,gm,csf}`.
+Implements the Dhollander 2016 unsupervised three-tissue response estimation algorithm (ISMRM Workshop abstract) using cs_dmri's RESTORE DTI fit for the underlying FA/MD/eigenvalue maps. Outputs three MRtrix-format `.txt` files that drop directly into `cs-ss3t --response-{wm,gm,csf}`.
 
-This is the missing piece for a fully MRtrix-free SS3T pipeline. With `cs-response` you can run **raw DWI → responses → SS3T → mtnormalise** entirely within cs-dmri (the only external tool is MRtrix's `mtnormalise` for the optional final normalization step; we may port this too in the future).
+This is the missing piece for a fully MRtrix-free SS3T pipeline. With `cs-response` you can run **raw DWI → responses → SS3T → mtnormalise** entirely within cs_dmri (the only external tool is MRtrix's `mtnormalise` for the optional final normalization step; we may port this too in the future).
 
-License posture: the per-tissue signal averaging is cs-dmri's own, written from the Dhollander 2016 abstract and informed by dipy BSD-3 idioms. The **voxel selection** is a port of MRtrix's `dwi2response dhollander`, which is MPL-2.0 — see [Third-party licences](#third-party-licences).
+License posture: the per-tissue signal averaging is cs_dmri's own, written from the Dhollander 2016 abstract and informed by dipy BSD-3 idioms. The **voxel selection** is a port of MRtrix's `dwi2response dhollander`, which is MPL-2.0 — see [Third-party licences](#third-party-licences).
 
 Per-voxel WM Pearson r vs MRtrix's reference SS3T pipeline is **0.97** (vs 0.996 when both sides use MRtrix-derived responses), with GM spatial r 0.97 and CSF spatial r 0.998 — within practical tolerance for tractography and microstructure use.
 
@@ -628,7 +628,7 @@ cs-ss3t \
 
 **Optional: post-process with `mtnormalise`**
 
-The raw cs-ss3t outputs are *not* intensity-normalized — coefficient magnitudes follow the response-function units. Most downstream tools (MRtrix3 tractography, qsirecon SS3T pipelines) consume mtnormalised outputs where the three tissues sum to a constant globally. To normalize, follow up with MRtrix3's `mtnormalise` (a separate dependency, not bundled with cs-dmri):
+The raw cs-ss3t outputs are *not* intensity-normalized — coefficient magnitudes follow the response-function units. Most downstream tools (MRtrix3 tractography, qsirecon SS3T pipelines) consume mtnormalised outputs where the three tissues sum to a constant globally. To normalize, follow up with MRtrix3's `mtnormalise` (a separate dependency, not bundled with cs_dmri):
 
 ```bash
 mtnormalise out/${STEM}_wm.nii.gz  out/${STEM}_wm_norm.nii.gz \
@@ -784,14 +784,14 @@ Seeds are derived deterministically from the case name (sha256), so re-running t
 - `gold_standard.sh` — multi-subject fit / ODF / synth pipeline across the bundles root.
 - `bench_fit_options.py` — sweep solver / α-strategy / radial-order combinations and emit per-config outputs under `~/cs-bench-csdsi/focused/`.
 - `bench_plots.R`, `gold_compare.Rmd` — R-side analysis and a parity report against qsirecon.
-- `validate_microstructure.py` — synthesize multi-tensor voxels, fit cs-dmri *and* dipy iso-MAPMRI, plot every microstructure scalar against analytical truth and against dipy, and report Pearson r + median relative error. Run inside the `qsirecon` conda env.
+- `validate_microstructure.py` — synthesize multi-tensor voxels, fit cs_dmri *and* dipy iso-MAPMRI, plot every microstructure scalar against analytical truth and against dipy, and report Pearson r + median relative error. Run inside the `qsirecon` conda env.
 - `microstructure_math.md` — closed-form derivations for the new scalars: BrainSuiteSHORE ↔ dipy iso-MAPMRI basis equivalence, ζ ↔ µ change of variables, per-mode α conversion factor, and the kernel for each scalar.
 
 ---
 
 ## License
 
-cs-dmri is dual-licensed under either of
+cs_dmri is dual-licensed under either of
 
 - the [Apache License, Version 2.0](LICENSE-APACHE), or
 - the [MIT license](LICENSE-MIT),
@@ -825,7 +825,7 @@ code and requires that file's source to stay available under MPL-2.0, but it
 does not reach the files that merely call into it, so the two licences coexist.
 Keeping that true is a maintenance constraint, not a formality — **do not copy
 MRtrix-derived logic out of these files into other modules**, and anyone
-redistributing cs-dmri must keep those files' source available under MPL-2.0.
+redistributing cs_dmri must keep those files' source available under MPL-2.0.
 
 [`src/qc.rs`](src/qc.rs) contains functions ported from
 [dipy](https://dipy.org/) (`find_qspace_neighbors`, `neighboring_dwi_correlation`,

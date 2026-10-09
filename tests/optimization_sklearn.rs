@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Cross-check cs-dmri's FISTA against scikit-learn's coordinate-descent
+//! Cross-check cs_dmri's FISTA against scikit-learn's coordinate-descent
 //! Lasso on a battery of synthetic problems.
 //!
 //! Fixtures live under `tests/data/lasso_fixtures/` as one `.bin` per case
@@ -15,7 +15,7 @@
 //! Per-fixture asserts:
 //! - **coefficient agreement** with sklearn (relative L₂ < 1e-3),
 //! - **objective agreement** (relative < 1e-6),
-//! - **KKT residual** on cs-dmri's solution (< 1e-5) — proves we converged
+//! - **KKT residual** on cs_dmri's solution (< 1e-5) — proves we converged
 //!   to the true minimum, not just sklearn's iterate.
 
 mod common;
@@ -189,7 +189,7 @@ fn check_fixture(fx: &Fixture) -> Result<(), String> {
         ));
     }
 
-    // KKT residual on cs-dmri's solution.
+    // KKT residual on cs_dmri's solution.
     let (active, inactive) = if fx.positive {
         kkt_residual_nonneg_lasso(&fx.design, &fx.signal, &coef, fx.alpha)
     } else {

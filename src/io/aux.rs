@@ -40,7 +40,7 @@ pub fn ensure_nifti_extension(path: &mut PathBuf, label: &str) -> bool {
     }
     let new_path = PathBuf::from(format!("{}.nii.gz", s));
     eprintln!(
-        "[cs-dmri] warning: {label} {} has no .nii.gz/.nii extension; appending .nii.gz → {}",
+        "[cs_dmri] warning: {label} {} has no .nii.gz/.nii extension; appending .nii.gz → {}",
         path.display(),
         new_path.display()
     );
@@ -58,7 +58,7 @@ pub fn ensure_nifti_extension(path: &mut PathBuf, label: &str) -> bool {
 /// - `path`'s parent directory rejects a write probe (read-only mount,
 ///   permission denied, etc.).
 ///
-/// The probe is a short-lived sibling file (`.cs-dmri-precheck.<pid>.<nanos>`)
+/// The probe is a short-lived sibling file (`.cs_dmri-precheck.<pid>.<nanos>`)
 /// created and deleted before we return.
 pub fn precheck_writable(path: &Path, overwrite: bool) -> Result<()> {
     if path.exists() && !overwrite {
@@ -88,7 +88,7 @@ pub fn precheck_writable(path: &Path, overwrite: bool) -> Result<()> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
-    let probe = probe_dir.join(format!(".cs-dmri-precheck.{pid}.{nanos}"));
+    let probe = probe_dir.join(format!(".cs_dmri-precheck.{pid}.{nanos}"));
     let mut f = fs::File::create(&probe).map_err(|e| {
         CsDmriError::Other(format!(
             "output directory {} is not writable (probe failed): {e}",
@@ -495,7 +495,7 @@ mod tests {
         let probes: Vec<_> = std::fs::read_dir(target.parent().unwrap())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().contains("cs-dmri-precheck"))
+            .filter(|e| e.file_name().to_string_lossy().contains("cs_dmri-precheck"))
             .collect();
         assert!(probes.is_empty(), "probe leaked: {} files", probes.len());
     }

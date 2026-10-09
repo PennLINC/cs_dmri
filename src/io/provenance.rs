@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Reproducibility provenance written into sidecars / ODX extras.
 //!
-//! `cs-dmri` is used on clinical / research neuroimaging data, so the default
+//! `cs_dmri` is used on clinical / research neuroimaging data, so the default
 //! mode (`Minimal`) avoids capturing anything that could carry PHI surface:
 //! no `argv` (subject IDs typically appear in input paths), no hostname, no
 //! wall-clock start time. Compile-time facts (version, git SHA, build

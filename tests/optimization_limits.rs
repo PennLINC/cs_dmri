@@ -38,7 +38,7 @@ fn fista_alpha_zero_matches_ols_overdetermined() {
     let beta_star = make_planted_beta(20, 6, true, 0xA2);
     let y = make_noisy_signal(&m, &beta_star, 0.05, 0xA3);
     let beta_ols = ols_solution(&m, &y);
-    // α = 1e-12 is "effectively zero" for cs-dmri's FISTA; using a literal 0
+    // α = 1e-12 is "effectively zero" for cs_dmri's FISTA; using a literal 0
     // would make `alpha.max(1e-12)` in cs-fit kick in anyway and is identical.
     let beta_fista = fit_fista(&m, &y, 1e-12, false);
     let diff = (&beta_fista - &beta_ols).iter().fold(0.0_f64, |a, b| a.max(b.abs()));

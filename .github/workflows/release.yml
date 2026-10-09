@@ -76,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: PyO3/maturin-action@v1
-        # cs-dmri itself has no C dependencies, but odx-rs builds HDF5 from
+        # cs_dmri itself has no C dependencies, but odx-rs builds HDF5 from
         # source (hdf5-metno, static), which needs CMake >= 3.26. Set the
         # CMAKE env var so the cmake-rs crate uses our pip-installed cmake;
         # before-script-linux populates /opt/_pipcmake/bin/cmake. This block
@@ -295,7 +295,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     environment:
       name: pypi
-      url: https://pypi.org/p/cs-dmri
+      url: https://pypi.org/p/cs_dmri
     permissions:
       id-token: write
     steps:

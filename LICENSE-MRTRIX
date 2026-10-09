@@ -1,10 +1,10 @@
 Third-Party Notice: MRtrix3
 ===========================
 
-cs-dmri incorporates portions of source code derived from MRtrix3
+cs_dmri incorporates portions of source code derived from MRtrix3
 (https://www.mrtrix.org/), copyright (c) 2008-2026 the MRtrix3 contributors.
 
-Files in cs-dmri containing MRtrix3-derived code:
+Files in cs_dmri containing MRtrix3-derived code:
 
   - src/multitissue/dhollander.rs
       The entire module is a port of the voxel-selection stages of
@@ -26,7 +26,7 @@ These portions, and any modifications thereof, are distributed under the
 Mozilla Public License Version 2.0, the verbatim text of which follows. A
 copy of the MPL 2.0 is also available at http://mozilla.org/MPL/2.0/.
 
-The remainder of cs-dmri (i.e., files that are not derivative works of
+The remainder of cs_dmri (i.e., files that are not derivative works of
 MRtrix3) is distributed under the terms of either the MIT license or the
 Apache License, Version 2.0, at your option; see LICENSE-MIT and
 LICENSE-APACHE.

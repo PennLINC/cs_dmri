@@ -16,7 +16,7 @@
  * Covered Software is provided under this License on an "as is" basis,
  * without warranty of any kind. See the Mozilla Public License v. 2.0.
  *
- * NOTE ON LICENSING: the rest of cs-dmri is distributed under the terms in
+ * NOTE ON LICENSING: the rest of cs_dmri is distributed under the terms in
  * ./LICENSE. MPL-2.0 is a file-scoped copyleft, so keeping the ported logic
  * confined to THIS file lets the two coexist: this file stays MPL-2.0 and its
  * source must remain available; the files that merely call into it do not
@@ -49,11 +49,11 @@
 //! is what excludes the partial-volume voxels.
 //!
 //! Deviations from MRtrix, all documented at their site:
-//!   * FA comes from cs-dmri's existing RESTORE tensor fit rather than a
+//!   * FA comes from cs_dmri's existing RESTORE tensor fit rather than a
 //!     freshly-run `dwi2tensor` restricted to the safe mask.
-//!   * Shells are cs-dmri's b-value clusters (see [`sdm_shells`]) so the metric
+//!   * Shells are cs_dmri's b-value clusters (see [`sdm_shells`]) so the metric
 //!     is also defined for non-shelled CS-DSI schemes.
-//!   * Which volumes count as b=0 follows cs-dmri's `DEFAULT_B0_THRESHOLD`
+//!   * Which volumes count as b=0 follows cs_dmri's `DEFAULT_B0_THRESHOLD`
 //!     (50 s/mm², dipy's convention). MRtrix's `BZeroThreshold` is 22.5 on the
 //!     dev branch and was 10.0 through 3.0.x. Immaterial on data acquired at
 //!     exactly b=0, but on a scheme with b≈30 "b=0" volumes the three
@@ -91,7 +91,7 @@
 //! Preparation is exact — erosion, the SDM, and the erroneous-voxel rejection
 //! agree to the voxel. Everything downstream inherits one difference: the crude
 //! split puts 41.6% of the safe mask in WM where MRtrix puts 33.7%, because
-//! cs-dmri's FA comes from RESTORE and MRtrix's from its own `dwi2tensor`.
+//! cs_dmri's FA comes from RESTORE and MRtrix's from its own `dwi2tensor`.
 //! **That tensor fit, not anything in this file, is the remaining lever on
 //! exact stage-count parity.**
 //!
@@ -418,7 +418,7 @@ pub fn select_voxels(
 /// its fODF peak amplitude to total (WM + CSF) l=0 amplitude under a two-tissue
 /// CSD fit — a genuine single-fibre test, where FA merely correlates with one.
 /// Both are supported upstream and both feed the same `amp2response` step; FA
-/// ranking is what cs-dmri can do without standing up a second CSD solve inside
+/// ranking is what cs_dmri can do without standing up a second CSD solve inside
 /// response estimation.
 pub fn select_sfwm_by_fa(
     dti: &DtiVolumeResult,
@@ -434,7 +434,7 @@ pub fn select_sfwm_by_fa(
 /// b-value clusters used as SDM "shells".
 ///
 /// MRtrix reads shells straight out of the gradient table, which presumes
-/// shelled acquisition. cs-dmri also has to cope with continuous-b CS-DSI
+/// shelled acquisition. cs_dmri also has to cope with continuous-b CS-DSI
 /// schemes, so shells here are b-value clusters at
 /// `tolerance`, with clusters below `min_volumes` merged into their nearest
 /// neighbour. On genuinely shelled data (the QST validation set: 18/90/90/90 at

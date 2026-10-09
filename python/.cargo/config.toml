@@ -1,6 +1,6 @@
 # macOS extension-module cdylib needs dynamic_lookup so Python symbols
 # resolve at load time. maturin sets these automatically; this lets plain
-# `cargo build -p cs-dmri-py` work too.
+# `cargo build -p cs_dmri_py` work too.
 [target.aarch64-apple-darwin]
 rustflags = [
   "-C", "link-arg=-undefined",

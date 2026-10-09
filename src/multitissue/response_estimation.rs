@@ -5,7 +5,7 @@
 //! Dhollander, Raffelt & Connelly, *"Unsupervised 3-tissue response function
 //! estimation from single-shell or multi-shell diffusion MR data without a
 //! co-registered T1 image"*, ISMRM Workshop 2016. Closes the SS3T loop —
-//! cs-dmri can now go from raw DWI → response → SS3T → mtnormalise without
+//! cs_dmri can now go from raw DWI → response → SS3T → mtnormalise without
 //! external MRtrix tools.
 //!
 //! Outputs three MRtrix-compatible `.txt` files (WM single-fibre, GM, CSF)
@@ -32,7 +32,7 @@
 //!
 //! ## License posture
 //!
-//! The averaging in this file is cs-dmri's own, written from the Dhollander
+//! The averaging in this file is cs_dmri's own, written from the Dhollander
 //! 2016 ISMRM abstract and sanity-checked against dipy's response estimators
 //! (BSD-3, permissive). The staged voxel selection it now calls IS a port of
 //! MRtrix's MPL-2.0 `dwi2response dhollander`, and is quarantined in
@@ -577,7 +577,7 @@ pub fn write_response_txt(response: &TissueResponse, path: &Path) -> Result<()> 
 pub fn format_response_txt(response: &TissueResponse) -> String {
     let mut content = String::new();
     content.push_str(&format!(
-        "# cs-dmri Dhollander-2016 response (lmax={}, {} shells)\n",
+        "# cs_dmri Dhollander-2016 response (lmax={}, {} shells)\n",
         response.lmax,
         response.n_shells()
     ));

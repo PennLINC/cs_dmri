@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
-"""cs-dmri: diffusion MRI quality control, SHORE compressed-sensing fits,
+"""cs_dmri: diffusion MRI quality control, SHORE compressed-sensing fits,
 RESTORE tensors and single-shell three-tissue CSD, implemented in Rust.
 
 >>> import cs_dmri as cs

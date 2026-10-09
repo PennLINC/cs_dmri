@@ -106,7 +106,7 @@ pub fn make_noisy_signal(m: &DMatrix<f64>, beta: &DVector<f64>, sigma: f64, seed
     DVector::from_fn(clean.len(), |i, _| clean[i] + sigma * standard_normal(&mut rng))
 }
 
-/// LASSO objective in cs-dmri / sklearn convention:
+/// LASSO objective in cs_dmri / sklearn convention:
 ///     F(β) = (1/(2m)) ‖Mβ − y‖² + α ‖β‖₁
 pub fn lasso_objective(m: &DMatrix<f64>, y: &DVector<f64>, beta: &DVector<f64>, alpha: f64) -> f64 {
     let r = m * beta - y;
@@ -191,7 +191,7 @@ pub fn kkt_residual_nonneg_lasso(
 /// Tikhonov normal-equation residual:
 ///     ‖(MᵀM + λ_n D_n + λ_l D_l) β − Mᵀy‖₂ / ‖Mᵀy‖₂
 ///
-/// cs-dmri's TikhonovSolver minimizes `‖Mβ−y‖² + λ_n ⟨β, D_n β⟩ + λ_l ⟨β, D_l β⟩`
+/// cs_dmri's TikhonovSolver minimizes `‖Mβ−y‖² + λ_n ⟨β, D_n β⟩ + λ_l ⟨β, D_l β⟩`
 /// (no 1/(2m) scaling; see [src/solver/tikhonov.rs](../../src/solver/tikhonov.rs)).
 pub fn tikhonov_normal_residual(
     m: &DMatrix<f64>,

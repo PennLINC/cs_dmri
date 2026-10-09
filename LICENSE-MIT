@@ -22,7 +22,7 @@ SOFTWARE.
 
 ----
 
-Note: This MIT license applies to the original cs-dmri code. Two files
+Note: This MIT license applies to the original cs_dmri code. Two files
 (src/multitissue/dhollander.rs and src/multitissue/mtnormalise.rs) are
 derived from MRtrix3 and remain governed by the Mozilla Public License,
 v. 2.0; see LICENSE-MRTRIX and the file-level headers for attribution and

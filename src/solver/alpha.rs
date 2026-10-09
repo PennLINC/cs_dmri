@@ -134,7 +134,7 @@ pub fn bic_argmin(
 ///
 /// This is a "1-SE rule"-style selector adapted to the SHORE / dMRI setting:
 /// instead of letting BIC trade fit for sparsity (which mis-fires on high-b
-/// or low-FA voxels — see the cs-dmri sampling-scheme harness), we bound
+/// or low-FA voxels — see the cs_dmri sampling-scheme harness), we bound
 /// fit looseness directly against a Tikhonov reference and keep the most
 /// parsimonious fit that meets the bound.
 pub fn l2_anchored_argmax(

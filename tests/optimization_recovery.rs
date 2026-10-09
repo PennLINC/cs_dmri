@@ -40,7 +40,7 @@ fn fixed_alpha_recovers_planted_support() {
     let m = make_design(400, 80, 0xA1);
     let beta_star = make_planted_beta(80, 10, true, 0xA2);
     let y = make_noisy_signal(&m, &beta_star, 0.05, 0xA3);
-    // α as a fraction of α_max (= ‖Mᵀy‖∞ / m in cs-dmri's sklearn-style
+    // α as a fraction of α_max (= ‖Mᵀy‖∞ / m in cs_dmri's sklearn-style
     // convention). 10% of α_max sits comfortably in the "active recovery"
     // regime — small enough to keep the planted support, large enough to
     // suppress most false positives.

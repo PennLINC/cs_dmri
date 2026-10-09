@@ -28,19 +28,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      # Build only the cs-dmri crate here. cs-dmri-py is a Python cdylib
+      # Build only the cs_dmri crate here. cs_dmri_py is a Python cdylib
       # whose link step needs `-undefined dynamic_lookup` on macOS
       # (configured in python/.cargo/config.toml, only visible when cargo
       # runs from python/). The cdylib itself is built in the python-tests
       # job via maturin; `cargo check` here still catches Rust errors.
-      - name: cargo build (cs-dmri)
-        run: cargo build -p cs-dmri --all-targets
+      - name: cargo build (cs_dmri)
+        run: cargo build -p cs_dmri --all-targets
 
-      - name: cargo check (cs-dmri-py)
-        run: cargo check -p cs-dmri-py
+      - name: cargo check (cs_dmri_py)
+        run: cargo check -p cs_dmri_py
 
-      - name: cargo test (cs-dmri)
-        run: cargo test -p cs-dmri
+      - name: cargo test (cs_dmri)
+        run: cargo test -p cs_dmri
 
   python-tests:
     name: Python tests (${{ matrix.os }} / py${{ matrix.python-version }})

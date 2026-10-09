@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
-"""Generate scikit-learn LASSO reference fixtures for cs-dmri's
+"""Generate scikit-learn LASSO reference fixtures for cs_dmri's
 optimization-correctness tests.
 
     python scripts/generate_lasso_fixtures.py
@@ -69,7 +69,7 @@ def gen_design(m: int, n: int, kind: str, rng: np.random.Generator) -> np.ndarra
 
 
 def alpha_max(M: np.ndarray, y: np.ndarray) -> float:
-    # cs-dmri / sklearn convention: loss = (1/(2m)) ||M beta - y||^2 + alpha ||beta||_1
+    # cs_dmri / sklearn convention: loss = (1/(2m)) ||M beta - y||^2 + alpha ||beta||_1
     return float(np.max(np.abs(M.T @ y)) / M.shape[0])
 
 

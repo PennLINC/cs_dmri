@@ -1,7 +1,7 @@
 [workspace]
 members = [".", "python"]
 
-# Single source of truth for the version: the cs-dmri crate, the Python
+# Single source of truth for the version: the cs_dmri crate, the Python
 # extension crate and the wheel (pyproject `dynamic = ["version"]`) all read it.
 [workspace.package]
 version = "0.1.0"
@@ -9,7 +9,7 @@ edition = "2021"
 license = "(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause"
 
 [package]
-name = "cs-dmri"
+name = "cs_dmri"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

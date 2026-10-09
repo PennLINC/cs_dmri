@@ -1,5 +1,5 @@
 ---
-title: "cs-dmri vs MRtrix gold-standard fixel comparison"
+title: "cs_dmri vs MRtrix gold-standard fixel comparison"
 output:
   html_document:
     toc: true
@@ -41,7 +41,7 @@ theme_g <- theme_minimal(base_size = 12) +
 
 # What is being compared, and why
 
-We are stress-testing **cs-dmri** — a compressed-sensing reconstruction that
+We are stress-testing **cs_dmri** — a compressed-sensing reconstruction that
 fits a SHORE-style basis to a sparse HARDI / multi-shell DWI — against
 the canonical **MRtrix3 MSMT-CSD** pipeline that qsirecon ships
 (`mrtrix_multishell_msmt_noACT`) run on a high-quality reference DWI (ABCD).
@@ -66,7 +66,7 @@ The two tests answer two distinct questions:
     cs's signal model is the bottleneck. If `roundtrip ≪ direct`, cs's
     in-house fixel extraction is contributing the bulk of the error.
 
-A perfectly tuned cs-dmri would land *both* near zero discrepancy.
+A perfectly tuned cs_dmri would land *both* near zero discrepancy.
 A reasonable one lands `roundtrip` clearly tighter than `direct`, and both
 inside the deep-WM noise floor of MRtrix-vs-MRtrix.
 
@@ -482,7 +482,7 @@ threshold differs from MRtrix's.
 # Render
 
 ```bash
-Rscript -e "rmarkdown::render('cs-dmri/scripts/gold_compare.Rmd', \\
+Rscript -e "rmarkdown::render('cs_dmri/scripts/gold_compare.Rmd', \\
   params = list(log_path = '<path/to/gold sweep stdout>', \\
                 gold_root = '~/cs-bench-csdsi/focused/gold', \\
                 read_voxels = TRUE), \\

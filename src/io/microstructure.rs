@@ -33,7 +33,7 @@ use crate::scalars::microstructure::{self, ScalarBasisInfo};
 
 /// Length-unit convention for the emitted scalars. `Um` matches TORTOISE's
 /// `EstimateMAPMRI` (q in 1/μm, RTOP in /μm³, …); `Mm` keeps the dipy /
-/// cs-dmri-internal convention (q in 1/mm).
+/// cs_dmri internal convention (q in 1/mm).
 #[derive(Debug, Clone, Copy)]
 pub enum MicrostructureUnits {
     Um,

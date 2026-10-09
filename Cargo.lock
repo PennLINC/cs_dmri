@@ -298,7 +298,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "cs-dmri"
+name = "cs_dmri"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -319,11 +319,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "cs-dmri-py"
+name = "cs_dmri_py"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cs-dmri",
+ "cs_dmri",
  "ndarray",
  "numpy",
  "odx-rs",

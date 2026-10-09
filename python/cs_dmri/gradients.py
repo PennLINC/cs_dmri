@@ -32,7 +32,7 @@ def _bvecs_n3(bvecs, n: int) -> np.ndarray:
 class GradientTable:
     """b-values and gradient directions of a DWI series.
 
-    Directions are taken as given; cs-dmri never flips or rotates them. For
+    Directions are taken as given; cs_dmri never flips or rotates them. For
     data loaded with nibabel, that means the image's voxel-axis frame (dipy's
     and FSL's convention).
 
@@ -97,7 +97,7 @@ class GradientTable:
 
 
 def as_gradient_table(gtab, **kwargs) -> GradientTable:
-    """Accept a cs-dmri or dipy gradient table, or a ``(bvals, bvecs)`` pair."""
+    """Accept a cs_dmri or dipy gradient table, or a ``(bvals, bvecs)`` pair."""
     if isinstance(gtab, GradientTable):
         return gtab
     if isinstance(gtab, tuple) and len(gtab) == 2:

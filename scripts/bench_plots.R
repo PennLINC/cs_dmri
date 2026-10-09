@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # SPDX-License-Identifier: MIT OR Apache-2.0
-# Visualize cs-dmri fit-option benchmark results.
+# Visualize cs_dmri fit-option benchmark results.
 #
 # Reads <bench-root>/summary.csv and writes a panel of PNGs to
 # <bench-root>/plots/. Default root is ~/cs-bench-csdsi/focused.
@@ -182,7 +182,7 @@ save_plot(p7, "07_generalization_gap", w = 9, h = 6)
 # ---- 8. Composite landing page --------------------------------------------
 landing <- (p1 | p2) / p3 +
   plot_annotation(
-    title = "cs-dmri fit-option sweep — HASC55 → ABCD cross-prediction (medians)",
+    title = "cs_dmri fit-option sweep — HASC55 → ABCD cross-prediction (medians)",
     subtitle = sprintf("source: %s", root),
     theme = theme(plot.title = element_text(face = "bold", size = 14))
   )

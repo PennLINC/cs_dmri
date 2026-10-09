@@ -134,7 +134,7 @@ struct Cli {
     /// (`cs_dmri_microstructure_outliers`). RTAP/RTPP need a first-peak
     /// direction; voxels without a detected peak come back as NaN.
     ///
-    /// Closed-form derivations: see `cs-dmri/scripts/microstructure_math.md`.
+    /// Closed-form derivations: see `cs_dmri/scripts/microstructure_math.md`.
     #[arg(long)]
     no_microstructure: bool,
 
@@ -168,7 +168,7 @@ struct Cli {
     /// /μm, MSD in μm², QIV in μm⁵. Values fall in TORTOISE's familiar
     /// [0, ~few] range for brain tissue.
     ///
-    /// `mm` keeps the dipy / cs-dmri-internal convention (q in 1/mm), which
+    /// `mm` keeps the dipy / cs_dmri internal convention (q in 1/mm), which
     /// makes RTOP ~1e5/mm³ — physically equivalent, just larger numbers.
     #[arg(long, value_enum, default_value_t = ScalarUnits::Um)]
     scalar_units: ScalarUnits,
@@ -178,7 +178,7 @@ struct Cli {
 enum ScalarUnits {
     /// TORTOISE convention: q in 1/μm, RTOP in /μm³, etc.
     Um,
-    /// dipy / cs-dmri-internal convention: q in 1/mm, RTOP in /mm³, etc.
+    /// dipy / cs_dmri internal convention: q in 1/mm, RTOP in /mm³, etc.
     Mm,
 }
 

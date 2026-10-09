@@ -1,13 +1,13 @@
-# cs-dmri (Python)
+# cs_dmri (Python)
 
-Python bindings for [cs-dmri](https://github.com/PennLINC/cs-dmri): diffusion
+Python bindings for [cs_dmri](https://github.com/PennLINC/cs_dmri): diffusion
 MRI quality control, 3D-SHORE compressed-sensing fits, RESTORE tensors and
 single-shell three-tissue CSD, implemented in Rust. Results are identical to
 the `cs-*` command-line tools.
 
 ```bash
-pip install cs-dmri            # numpy + nibabel
-pip install "cs-dmri[dipy]"    # with dipy, for the parity tests and dipy interop examples
+pip install cs_dmri            # numpy + nibabel
+pip install "cs_dmri[dipy]"    # with dipy, for the parity tests and dipy interop examples
 ```
 
 ## Quality control
