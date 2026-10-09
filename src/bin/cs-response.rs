@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use cs_dmri::dti::{DtiFitConfig, RestoreConfig, fit_volume_restore_reporting};
-use cs_dmri::io::aux::{write_3d_u8};
+use cs_dmri::io::output::{write_3d_u8};
 use cs_dmri::io::dwi::load_dwi;
 use cs_dmri::multitissue::response_estimation::{
     DhollanderConfig, DhollanderSelectConfig, estimate_responses, write_response_txt,

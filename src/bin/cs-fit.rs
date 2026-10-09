@@ -11,7 +11,7 @@ use cs_dmri::fit::{
     ShoreFitSpec, ShoreRegularization, build_alpha_strategy, fit_shore, mean_in_mask,
     rmse_from_residual_l2, sparsity_map,
 };
-use cs_dmri::io::aux::{ensure_nifti_extension, precheck_writable, sibling_path, write_3d_f32};
+use cs_dmri::io::output::{ensure_nifti_extension, precheck_writable, sibling_path, write_3d_f32};
 use cs_dmri::io::coeffs::{CoefficientsFile, SidecarMetadata};
 use cs_dmri::io::dwi::load_dwi;
 use cs_dmri::qspace::{BvecFrame, TORTOISE_DEFAULT_GMAX};

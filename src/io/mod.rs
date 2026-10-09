@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-pub mod aux;
+pub mod output;
 pub mod coeffs;
 pub mod dwi;
 pub mod microstructure;

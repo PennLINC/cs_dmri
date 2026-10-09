@@ -484,7 +484,7 @@ pub fn write_microstructure_nifti_siblings(
             volume[(i, j, k)] = values[v];
         }
         let out_nii = scalar_sibling_path(output_path, name);
-        crate::io::aux::write_3d_f32_with_affine(&out_nii, affine, &volume, overwrite)
+        crate::io::output::write_3d_f32_with_affine(&out_nii, affine, &volume, overwrite)
             .map_err(|e| anyhow!("write {:?}: {e}", out_nii))?;
         if !quiet {
             eprintln!("[microstructure] wrote {}", out_nii.display());

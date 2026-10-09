@@ -14,7 +14,7 @@ use clap::Parser;
 use ndarray::{Array3, Array4};
 use nifti::{IntoNdArray, NiftiObject, ReaderOptions};
 
-use cs_dmri::io::aux::{sibling_path, write_3d_f32, write_4d_f32};
+use cs_dmri::io::output::{sibling_path, write_3d_f32, write_4d_f32};
 use cs_dmri::multitissue::mtnormalise::{
     MtnormaliseConfig, mtnormalise, target_sum_mrtrix_default,
 };

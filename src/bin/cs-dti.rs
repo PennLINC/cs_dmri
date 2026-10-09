@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use cs_dmri::dti::{DtiFitConfig, RestoreConfig, fit_volume_restore_reporting};
-use cs_dmri::io::aux::{sibling_path, write_3d_f32, write_3d_u8, write_3d_u32_as_f32, write_4d_f32};
+use cs_dmri::io::output::{sibling_path, write_3d_f32, write_3d_u8, write_3d_u32_as_f32, write_4d_f32};
 use cs_dmri::io::dwi::load_dwi;
 use cs_dmri::qspace::{BvecFrame, TORTOISE_DEFAULT_GMAX};
 use cs_dmri::{
