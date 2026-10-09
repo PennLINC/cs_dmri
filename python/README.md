@@ -21,6 +21,8 @@ cs.QCReport.column_descriptions()               # its data dictionary
 tensor = cs.RestoreModel(dwi.gtab).fit(dwi)     # FA, MD, S0, principal direction
 shore = cs.ShoreModel(dwi.gtab).fit(dwi)        # 3D-SHORE coefficients and diagnostics
 ss3t = cs.ss3t_pipeline(dwi)                    # single-shell three-tissue CSD
+
+ss3t.export("ss3t.odx")                         # ODX; also .fz, .fib.gz, .pam5, .mif
 ```
 
 Documentation: <https://cs-dmri.readthedocs.io>

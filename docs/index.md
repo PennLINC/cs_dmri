@@ -16,7 +16,7 @@ provides:
   intensity normalization.
 
 Orientation outputs are written in the [ODX](https://github.com/PennLINC/odx-rs)
-format. The command-line tools and the Python interface share one
+format and can be exported for DSI Studio, dipy and MRtrix3. The command-line tools and the Python interface share one
 implementation and produce identical results.
 
 ```{toctree}
@@ -35,6 +35,7 @@ user/qc
 user/shore
 user/dti
 user/multitissue
+user/export
 user/conventions
 ```
 

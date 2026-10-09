@@ -28,6 +28,9 @@ ss3t = cs.ss3t_pipeline(dwi)
 ss3t.export("ss3t.fz")                  # for DSI Studio
 ```
 
+Fits can be exported to ODX, DSI Studio, dipy and MRtrix3 formats; see
+{doc}`user/export`.
+
 A {class}`~cs_dmri.dwi.DWI` holds the data, gradient table, affine and mask of
 one series, and caches results that several analyses share, such as the tensor
 fit.

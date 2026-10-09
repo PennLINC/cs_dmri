@@ -100,4 +100,4 @@ Output
 : {meth}`~cs_dmri.shore.ShoreFit.export` and `cs-odf` (or `cs-fit
   --odx-output`) write the ODF coefficients, peaks, scalars and diagnostics to
   an ODX file in RAS+ orientation. From Python the same results can also be
-  written for DSI Studio, dipy or MRtrix3 (see {doc}`conventions`).
+  written for DSI Studio, dipy or MRtrix3 (see {doc}`export`).
