@@ -1,0 +1,490 @@
+---
+title: "cs-dmri vs MRtrix gold-standard fixel comparison"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+    df_print: paged
+params:
+  log_path:  "~/cs-bench-csdsi/focused/gold/run.log"
+  gold_root: "~/cs-bench-csdsi/focused/gold"
+  read_voxels: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 9, fig.height = 5.2, dpi = 130)
+suppressPackageStartupMessages({
+  library(readr); library(dplyr); library(tidyr); library(stringr); library(purrr)
+  library(forcats); library(ggplot2); library(scales); library(patchwork); library(knitr)
+})
+
+log_path  <- normalizePath(params$log_path,  mustWork = FALSE)
+gold_root <- normalizePath(params$gold_root, mustWork = FALSE)
+
+cfg_levels <- c("l2_baseline", "l1_ratio_1e-3",
+                "l1_pathbic_n20", "l1_pathbic_ro4", "l1_pathbic_nn")
+cfg_colors <- c("l2_baseline"    = "#888888",
+                "l1_ratio_1e-3"  = "#d95f02",
+                "l1_pathbic_n20" = "#1b9e77",
+                "l1_pathbic_ro4" = "#7570b3",
+                "l1_pathbic_nn"  = "#e7298a")
+tag_colors <- c(direct = "#ca0020", roundtrip = "#0571b0")
+
+theme_g <- theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right",
+        panel.grid.minor = element_blank())
+```
+
+# What is being compared, and why
+
+We are stress-testing **cs-dmri** — a compressed-sensing reconstruction that
+fits a SHORE-style basis to a sparse HARDI / multi-shell DWI — against
+the canonical **MRtrix3 MSMT-CSD** pipeline that qsirecon ships
+(`mrtrix_multishell_msmt_noACT`) run on a high-quality reference DWI (ABCD).
+The two tests answer two distinct questions:
+
+1.  **`cs_direct_vs_gold` — does cs-odf's HASC55 fit recover the same fixels
+    that MRtrix would have produced from the *real* ABCD DWI?**
+    The HASC55 sequence is a sparsely sampled q-space scheme; cs's job is to
+    fit a model that captures enough of the fiber geometry to be useful.
+    "Useful" here is defined externally: peaks that line up, in 3-D, with what
+    MRtrix MSMT-CSD finds in the dense reference acquisition. Differences
+    here are *attribution-ambiguous* — they could be cs's signal model, cs's
+    fixel extraction (peak finder + thresholding), or a real limitation of the
+    HASC q-space coverage.
+
+2.  **`cs_roundtrip_vs_gold` — does cs-predicted ABCD signal, fed through the
+    *same* MRtrix pipeline, recover gold?**
+    cs-fit on HASC → cs-synth onto ABCD's gradient table → MRtrix MSMT-CSD →
+    fixels. Both sides of this comparison go through identical MRtrix code,
+    so any "fixel extraction style" difference is cancelled out — what
+    remains is purely *signal-prediction quality*. If `roundtrip ≈ direct`,
+    cs's signal model is the bottleneck. If `roundtrip ≪ direct`, cs's
+    in-house fixel extraction is contributing the bulk of the error.
+
+A perfectly tuned cs-dmri would land *both* near zero discrepancy.
+A reasonable one lands `roundtrip` clearly tighter than `direct`, and both
+inside the deep-WM noise floor of MRtrix-vs-MRtrix.
+
+## Per-metric reading guide
+
+| Metric (per voxel)            | Lower is better? | What surprising values mean |
+|-------------------------------|------------------|-----------------------------|
+| `mean_match_angle_deg`        | yes              | >20° → fibers really are pointing differently; 30° is the cap |
+| `top1_match`                  | no (1 = best)    | <0.5 → primary direction disagrees in the majority of voxels |
+| `n_matched`                   | (paired)         | well below `min(n_a, n_b)` → each side is finding fixels the other isn't |
+| `dice` / `jaccard` (presence) | no (1 = best)    | low + low angle → spurious extra peaks; low + high angle → real disagreement |
+| `coherence_index`             | no (higher = aligned with neighbors) | drops < 0.10 → fixel field is noise |
+| `dpf_amplitude_diff_mean`     | yes (signed)     | systematic bias = scaling difference in normalization |
+
+# Data ingestion
+
+We pull cell-level summary scalars straight from the gold-sweep stdout log,
+and (optionally) read per-voxel NIfTI maps from each comparison cell.
+
+```{r load_log}
+parse_gold_log <- function(path) {
+  lines <- readLines(path)
+  pair_re <- "^===== pair: (\\S+) +<-> +(\\S+)"
+  done_re <- "^\\[(cs_direct_vs_gold|cs_roundtrip_vs_gold)/([^/]+)/([^]]+)\\] done"
+
+  cur <- list(); rows <- list(); pair_hasc <- NA_character_; pair_abcd <- NA_character_
+  for (ln in lines) {
+    m <- regmatches(ln, regexec(pair_re, ln))[[1]]
+    if (length(m) == 3) { pair_hasc <- m[2]; pair_abcd <- m[3]; next }
+
+    if (startsWith(ln, "primary_metric:"))     cur$primary_metric    <- trimws(sub("^primary_metric:", "", ln))
+    if (startsWith(ln, "coherence_angle_deg:"))cur$coherence_angle   <- as.numeric(sub("^coherence_angle_deg:", "", ln))
+    if (startsWith(ln, "match_angle_deg:"))    cur$match_angle       <- as.numeric(sub("^match_angle_deg:", "", ln))
+    if (startsWith(ln, "voxels: a=")) {
+      kv <- str_match(ln, "a=(\\d+), b=(\\d+), intersection=(\\d+)")[1, ]
+      cur$voxels_a <- as.numeric(kv[2]); cur$voxels_b <- as.numeric(kv[3]); cur$voxels_isect <- as.numeric(kv[4])
+    }
+    if (startsWith(ln, "fixels: a=")) {
+      kv <- str_match(ln, "a=(\\d+), b=(\\d+)")[1, ]
+      cur$fixels_a <- as.numeric(kv[2]); cur$fixels_b <- as.numeric(kv[3])
+    }
+    if (startsWith(ln, "matched: mutual=")) {
+      kv <- str_match(ln, "mutual=(\\d+), unmatched_a=(\\d+), unmatched_b=(\\d+)")[1, ]
+      cur$mutual <- as.numeric(kv[2]); cur$unmatched_a <- as.numeric(kv[3]); cur$unmatched_b <- as.numeric(kv[4])
+    }
+    if (startsWith(ln, "mean_match_angle_deg:"))
+      cur$mean_match_angle <- as.numeric(sub("^mean_match_angle_deg:", "", ln))
+    if (startsWith(ln, "coherence_index: a=")) {
+      kv <- str_match(ln, "a=([\\d\\.]+), b=([\\d\\.]+)")[1, ]
+      cur$coh_a <- as.numeric(kv[2]); cur$coh_b <- as.numeric(kv[3])
+    }
+    if (startsWith(ln, "shared_dpf_keys:"))
+      cur$shared_dpf_keys <- trimws(sub("^shared_dpf_keys:", "", ln))
+
+    md <- regmatches(ln, regexec(done_re, ln))[[1]]
+    if (length(md) == 4) {
+      tag    <- sub("cs_", "", sub("_vs_gold", "", md[2]))   # "direct" | "roundtrip"
+      pair   <- md[3]
+      config <- md[4]
+      rows[[length(rows) + 1]] <- modifyList(
+        list(pair = pair, hasc = pair_hasc, abcd = pair_abcd, config = config, tag = tag),
+        cur
+      )
+      cur <- list()
+    }
+  }
+  bind_rows(rows)
+}
+
+scalars <- parse_gold_log(log_path) |>
+  mutate(
+    config       = factor(config, levels = cfg_levels),
+    tag          = factor(tag,    levels = c("direct", "roundtrip")),
+    subject      = str_extract(pair, "sub-[A-Za-z0-9]+"),
+    matched_frac = mutual / pmin(fixels_a, fixels_b),
+    a_extra      = unmatched_a / fixels_a,
+    b_missed     = unmatched_b / fixels_b
+  )
+stopifnot(nrow(scalars) > 0)
+```
+
+```{r data_glance}
+cat(sprintf("Cells parsed: %d  (%d pairs × %d configs × %d tags)\n",
+            nrow(scalars),
+            length(unique(scalars$pair)),
+            length(unique(scalars$config)),
+            length(unique(scalars$tag))))
+```
+
+# Per-cell summary
+
+```{r per_cell_table}
+scalars |>
+  arrange(subject, config, tag) |>
+  transmute(
+    subject, config, tag,
+    mean_angle_deg = round(mean_match_angle, 2),
+    matched_frac   = round(matched_frac, 3),
+    a_extra        = round(a_extra, 3),
+    b_missed       = round(b_missed, 3),
+    coh_a          = round(coh_a, 3),
+    coh_b          = round(coh_b, 3),
+    shared_dpf_keys
+  )
+```
+
+# Per-config aggregates (median across subjects)
+
+The headline numbers — what to look at first.
+
+```{r per_config_table}
+agg <- scalars |>
+  group_by(config, tag) |>
+  summarise(
+    n              = n(),
+    mean_angle_med = median(mean_match_angle),
+    matched_frac   = median(matched_frac),
+    a_extra        = median(a_extra),
+    b_missed       = median(b_missed),
+    coh_a          = median(coh_a),
+    coh_b          = median(coh_b),
+    .groups = "drop"
+  ) |>
+  arrange(config, tag)
+
+agg |>
+  mutate(across(where(is.numeric) & !n, ~ round(.x, 3))) |>
+  kable(caption = "Medians across subjects, per (config, tag).")
+```
+
+The `direct` − `roundtrip` gap, at a glance:
+
+```{r angle_gap_table}
+scalars |>
+  select(subject, config, tag, mean_match_angle) |>
+  pivot_wider(names_from = tag, values_from = mean_match_angle) |>
+  mutate(
+    direct    = round(direct, 2),
+    roundtrip = round(roundtrip, 2),
+    gap       = round(direct - roundtrip, 2)
+  ) |>
+  arrange(config, subject) |>
+  kable(caption = "Per-cell angle (deg). gap > 0 means roundtrip is tighter — cs's in-house fixel extraction is the larger source of error.")
+```
+
+# Plots
+
+## 1. Mean match angle by config (direct vs roundtrip)
+
+```{r p_angle_box}
+p_angle <- ggplot(scalars, aes(fct_rev(config), mean_match_angle, fill = tag)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.4, position = position_dodge(0.7), width = 0.6) +
+  geom_point(aes(color = tag, group = tag), size = 2.6, alpha = 0.9,
+             position = position_jitterdodge(jitter.width = 0.12, dodge.width = 0.7)) +
+  scale_fill_manual(values  = tag_colors) +
+  scale_color_manual(values = tag_colors) +
+  coord_flip() +
+  labs(title = "Mean match angle by config",
+       subtitle = "Lower = closer to gold. Boxes pool 4 subjects per config × tag.",
+       x = NULL, y = "mean match angle (deg)",
+       fill = "test", color = "test") +
+  theme_g
+p_angle
+```
+
+## 2. Direct vs roundtrip, paired by subject
+
+Each line connects the two tests for one subject × config. A line that
+**slopes down** to roundtrip means cs's predicted signal is tighter than
+its in-house fixels — the prediction is the better story, the local fixel
+extractor is the weaker one. A flat line means the two stories agree:
+whatever discrepancy exists is in the signal model, not the fixel routine.
+
+```{r p_paired}
+paired <- scalars |>
+  select(subject, config, tag, mean_match_angle) |>
+  pivot_wider(names_from = tag, values_from = mean_match_angle)
+
+paired_long <- scalars |>
+  select(subject, config, tag, mean_match_angle)
+
+p_pair <- ggplot(paired_long, aes(tag, mean_match_angle)) +
+  geom_line(aes(group = interaction(subject, config), color = subject),
+            alpha = 0.85, linewidth = 0.7) +
+  geom_point(aes(color = subject, shape = subject), size = 2.6) +
+  facet_wrap(~ config, nrow = 1) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(title = "Per-subject paired direct vs roundtrip",
+       subtitle = "Down-sloping line: cs prediction better than cs's own fixels. Flat: signal-model bound.",
+       x = NULL, y = "mean match angle (deg)") +
+  theme_g +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+p_pair
+```
+
+## 3. Detection accounting — matched vs spurious vs missed
+
+`a_extra` is the fraction of side-A fixels with no acceptable match on B
+(false positives, from gold's perspective); `b_missed` is the fraction of
+gold-side fixels cs failed to find (false negatives).
+
+```{r p_counts}
+counts_long <- scalars |>
+  select(subject, config, tag, matched_frac, a_extra, b_missed) |>
+  pivot_longer(c(matched_frac, a_extra, b_missed),
+               names_to = "kind", values_to = "frac") |>
+  mutate(kind = factor(kind,
+                       levels = c("matched_frac", "a_extra", "b_missed"),
+                       labels = c("matched (mutual / min(a,b))",
+                                  "a extra (cs has, gold doesn't)",
+                                  "b missed (gold has, cs doesn't)")))
+
+p_counts <- ggplot(counts_long, aes(config, frac, fill = tag)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.4, position = position_dodge(0.7), width = 0.6) +
+  geom_point(aes(color = tag, group = tag), size = 2.2, alpha = 0.9,
+             position = position_jitterdodge(jitter.width = 0.12, dodge.width = 0.7)) +
+  facet_wrap(~ kind, scales = "free_y") +
+  scale_fill_manual(values = tag_colors) +
+  scale_color_manual(values = tag_colors) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Fixel detection accounting",
+       x = NULL, y = "fraction", fill = "test", color = "test") +
+  theme_g +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+p_counts
+```
+
+## 4. Fixel-field coherence — cs vs gold
+
+`coherence_index` measures how aligned a voxel's fixels are with its
+neighbors. The gold side is identical across configs (same MRtrix run);
+cs's coherence varies by regularization. A cs run with coherence
+*higher* than gold can mean *over-smoothed*; lower can mean *noisy*.
+
+```{r p_coherence}
+coh <- scalars |>
+  filter(tag == "direct") |>     # gold value is the same in both rows; pick one
+  select(subject, config, coh_a, coh_b)
+
+p_coh <- ggplot(coh, aes(config, coh_a, color = subject, shape = subject)) +
+  geom_hline(aes(yintercept = coh_b), data = coh,
+             linetype = "dashed", color = "grey50", alpha = 0.5) +
+  geom_point(size = 3.2, alpha = 0.9) +
+  geom_text(aes(y = coh_b, label = sprintf("gold = %.2f", coh_b)),
+            color = "grey40", size = 2.8, hjust = 0, nudge_x = 0.15,
+            data = coh |> distinct(subject, coh_b) |> mutate(config = factor(cfg_levels[1], levels = cfg_levels))) +
+  scale_color_brewer(palette = "Dark2") +
+  facet_wrap(~ subject, nrow = 1) +
+  labs(title = "cs-side coherence vs MRtrix gold",
+       subtitle = "Dashed = gold (subject-specific). cs above gold ≈ over-smoothed; below ≈ noisier.",
+       x = NULL, y = "coherence_index") +
+  theme_g +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+p_coh
+```
+
+# Per-voxel distributions
+
+```{r read_voxels, eval=params$read_voxels}
+have_rnifti <- requireNamespace("RNifti", quietly = TRUE)
+if (!have_rnifti) {
+  message("RNifti not installed; skipping per-voxel section. Install with: install.packages('RNifti')")
+}
+```
+
+```{r voxel_load, eval=params$read_voxels && exists("have_rnifti") && have_rnifti}
+read_dpv <- function(pair, config, tag_full, name) {
+  p <- file.path(gold_root, pair, config, tag_full, paste0(name, ".nii.gz"))
+  if (!file.exists(p)) return(NULL)
+  arr <- as.numeric(RNifti::readNifti(p))
+  arr[is.finite(arr) & arr > 0]
+}
+
+cells <- scalars |> distinct(pair, subject, config, tag) |>
+  mutate(tag_full = paste0("cs_", tag, "_vs_gold"))
+
+vox_angle <- cells |>
+  mutate(values = pmap(list(pair, config, tag_full),
+                       \(p, c, t) read_dpv(p, as.character(c), t, "mean_match_angle_deg"))) |>
+  filter(map_lgl(values, ~ !is.null(.x) && length(.x) > 0)) |>
+  unnest(values) |>
+  rename(angle = values)
+
+vox_top1 <- cells |>
+  mutate(values = pmap(list(pair, config, tag_full),
+                       \(p, c, t) {
+                         v <- read_dpv(p, as.character(c), t, "top1_match")
+                         if (is.null(v)) NULL else v
+                       })) |>
+  filter(map_lgl(values, ~ !is.null(.x) && length(.x) > 0)) |>
+  unnest(values) |>
+  rename(top1 = values)
+
+vox_amp <- cells |>
+  mutate(values = pmap(list(pair, config, tag_full),
+                       \(p, c, t) {
+                         f <- file.path(gold_root, p, as.character(c), t, "dpf_amplitude_diff_mean.nii.gz")
+                         if (!file.exists(f)) return(NULL)
+                         arr <- as.numeric(RNifti::readNifti(f))
+                         arr[is.finite(arr)]
+                       })) |>
+  filter(map_lgl(values, ~ !is.null(.x) && length(.x) > 0)) |>
+  unnest(values) |>
+  rename(amp_diff = values)
+```
+
+## Voxel-level mean match angle
+
+This is the most direct view of *where the test fails*. The boxes are over
+voxels (not subjects). Tails reaching the 30° cap = voxels that picked up
+a match only because the threshold allowed it; mass at low angles = real
+agreement.
+
+```{r p_vox_angle, eval=params$read_voxels && exists("vox_angle") && nrow(vox_angle) > 0}
+p_vox_angle <- ggplot(vox_angle, aes(fct_rev(config), angle, fill = tag)) +
+  geom_violin(alpha = 0.45, position = position_dodge(0.7), width = 0.9, scale = "width", trim = TRUE) +
+  geom_boxplot(width = 0.18, outlier.shape = NA, alpha = 0.7,
+               position = position_dodge(0.7)) +
+  scale_fill_manual(values = tag_colors) +
+  coord_flip() +
+  labs(title = "Per-voxel mean match angle distribution",
+       subtitle = "Pooled across subjects. Mass at low values = real recovery; mass at the cap = forced matches.",
+       x = NULL, y = "mean match angle (deg)", fill = "test") +
+  theme_g
+p_vox_angle
+```
+
+## Voxel-level top-1 match (primary direction agreement)
+
+`top1_match = 1` when the largest fixel on side A is matched to the largest
+on side B and falls within the match-angle threshold. This is the
+"single-fiber WM voxel" sanity check — in deep WM these should be near 1
+across most voxels.
+
+```{r p_vox_top1, eval=params$read_voxels && exists("vox_top1") && nrow(vox_top1) > 0}
+p_vox_top1 <- ggplot(vox_top1, aes(top1, fill = tag, color = tag)) +
+  stat_ecdf(geom = "step", linewidth = 0.8, alpha = 0.85) +
+  facet_wrap(~ config, nrow = 1) +
+  scale_color_manual(values = tag_colors) +
+  scale_fill_manual(values  = tag_colors) +
+  scale_x_continuous(limits = c(0, 1)) +
+  labs(title = "ECDF of top-1 match (per voxel, pooled across subjects)",
+       subtitle = "Curve hugging the right = primary direction usually agrees.",
+       x = "top1_match", y = "F(x)", color = "test", fill = "test") +
+  theme_g
+p_vox_top1
+```
+
+## Amplitude bias (signed)
+
+`dpf_amplitude_diff_mean` is signed: positive = cs side has larger matched
+fixel amplitude than gold. A clean run sits on zero with symmetric tails.
+A consistently shifted distribution is a *normalization* problem (e.g.
+`mtnormalise` not applied, basis scaling drift), not a directional one.
+
+```{r p_amp, eval=params$read_voxels && exists("vox_amp") && nrow(vox_amp) > 0}
+amp_clip <- vox_amp |>
+  group_by(config, tag) |>
+  mutate(amp_diff = pmin(pmax(amp_diff, quantile(amp_diff, .005)),
+                                          quantile(amp_diff, .995))) |>
+  ungroup()
+
+p_amp <- ggplot(amp_clip, aes(amp_diff, fill = tag, color = tag)) +
+  geom_density(alpha = 0.35) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  facet_wrap(~ config, scales = "free_y") +
+  scale_color_manual(values = tag_colors) +
+  scale_fill_manual(values  = tag_colors) +
+  labs(title = "Per-voxel mean matched-fixel amplitude difference (cs − gold)",
+       subtitle = "Density, 0.5–99.5% clipped per panel. Centered = no scale bias; shifted = normalization issue.",
+       x = "amplitude diff (cs − gold)", y = "density", color = "test", fill = "test") +
+  theme_g
+p_amp
+```
+
+# Practical takeaways
+
+```{r takeaways}
+best_direct    <- agg |> filter(tag == "direct")    |> slice_min(mean_angle_med, n = 1)
+best_roundtrip <- agg |> filter(tag == "roundtrip") |> slice_min(mean_angle_med, n = 1)
+worst_direct   <- agg |> filter(tag == "direct")    |> slice_max(mean_angle_med, n = 1)
+
+cat(sprintf("Best on direct:    %-15s  median angle %5.2f°\n",
+            best_direct$config, best_direct$mean_angle_med))
+cat(sprintf("Best on roundtrip: %-15s  median angle %5.2f°\n",
+            best_roundtrip$config, best_roundtrip$mean_angle_med))
+cat(sprintf("Worst on direct:   %-15s  median angle %5.2f°\n",
+            worst_direct$config, worst_direct$mean_angle_med))
+```
+
+**How to read the headline numbers.** A median match angle of \~12–15° is
+consistent with what MRtrix-vs-MRtrix scatter looks like in clean WM at
+this match threshold (30°); the floor is set by gold's own fixel-detection
+noise, not by cs. Configs that drag above \~16° on `direct` *and* fail to
+recover on `roundtrip` are flagging a real signal-model problem (e.g. the
+non-negative path-bic config hitting a constrained optimum that distorts
+predicted signal). Configs that improve on `roundtrip` but not `direct`
+are flagging a fixel-extraction style issue — cs's own peak finder /
+threshold differs from MRtrix's.
+
+**What the gap means in practice.**
+
+-   `gap = direct − roundtrip > 0` and large (≳ 1°): swap cs's in-house
+    fixel extractor for fod2fixel-on-cs-coeffs in downstream analyses.
+    The signal is fine; the fixel routine is the cost.
+-   `gap ≈ 0`: cs's fixel routine is already fine; further angle reduction
+    requires a better signal model (denser q-space, different basis, less
+    aggressive regularization).
+-   `gap < 0` (rare): the predicted signal *adds* error — the regularizer
+    is too aggressive and is biasing the predicted DWI. Inspect that
+    config's `cross_r2_p50` from the bench summary.
+
+# Render
+
+```bash
+Rscript -e "rmarkdown::render('cs-dmri/scripts/gold_compare.Rmd', \\
+  params = list(log_path = '<path/to/gold sweep stdout>', \\
+                gold_root = '~/cs-bench-csdsi/focused/gold', \\
+                read_voxels = TRUE), \\
+  output_dir = '~/cs-bench-csdsi/focused/gold')"
+```

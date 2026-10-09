@@ -1,0 +1,66 @@
+[package]
+name = "cs-dmri"
+version = "0.1.0"
+edition = "2021"
+description = "Compressed-sensing reconstruction of diffusion MRI data with the 3D-SHORE basis"
+license = "(MIT OR Apache-2.0) AND MPL-2.0"
+publish = false
+
+[lib]
+name = "cs_dmri"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cs-fit"
+path = "src/bin/cs-fit.rs"
+
+[[bin]]
+name = "cs-synth"
+path = "src/bin/cs-synth.rs"
+
+[[bin]]
+name = "cs-odf"
+path = "src/bin/cs-odf.rs"
+
+[[bin]]
+name = "cs-ss3t"
+path = "src/bin/cs-ss3t.rs"
+
+[[bin]]
+name = "cs-dti"
+path = "src/bin/cs-dti.rs"
+
+[[bin]]
+name = "cs-response"
+path = "src/bin/cs-response.rs"
+
+[[bin]]
+name = "cs-mtnorm"
+path = "src/bin/cs-mtnorm.rs"
+
+[[bin]]
+name = "cs-ss3t-full"
+path = "src/bin/cs-ss3t-full.rs"
+
+[dependencies]
+nalgebra = "0.33"
+ndarray = "0.16"
+nifti = "0.17"
+rayon = "1.10"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+odx-rs = { git = "https://github.com/PennLINC/odx-rs", tag = "v0.2.0" }
+mimalloc = { version = "0.1", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[dev-dependencies]
+approx = "0.5"
+tempfile = "3"
+rand = "0.8"
+rand_chacha = "0.3"

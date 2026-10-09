@@ -1,0 +1,10 @@
+[
+  "small_dense.bin",
+  "medium_dense.bin",
+  "underdetermined.bin",
+  "ill_conditioned.bin",
+  "nonneg_small.bin",
+  "nonneg_medium.bin",
+  "near_alpha_max.bin",
+  "very_low_alpha.bin"
+]
