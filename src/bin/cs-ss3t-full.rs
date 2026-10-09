@@ -244,6 +244,7 @@ fn main() -> Result<()> {
             mask_voxels
         );
     }
+    cs_dmri::qc::report_input_qc("cs-ss3t-full", &dwi, args.quiet);
 
     // ---- Stage 1: responses (estimate or load) ----
     let interval = Duration::from_secs(args.progress_interval_secs.max(1));

@@ -183,6 +183,7 @@ fn main() -> Result<()> {
             mask_voxels
         );
     }
+    cs_dmri::qc::report_input_qc("cs-ss3t", &dwi, args.quiet);
 
     let responses = Ss3tResponses {
         wm: TissueResponse::parse_mrtrix_txt(&args.response_wm)

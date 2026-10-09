@@ -255,6 +255,7 @@ fn main() -> Result<()> {
             dwi.gtab.delta_source,
         );
     }
+    cs_dmri::qc::report_input_qc("cs-fit", &dwi, args.quiet);
 
     let basis = ShoreBasis::new(args.radial_order, args.zeta);
     let design = basis.design_matrix(&dwi.gtab);

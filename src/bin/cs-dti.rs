@@ -147,6 +147,7 @@ fn main() -> Result<()> {
             mask_voxels
         );
     }
+    cs_dmri::qc::report_input_qc("cs-dti", &dwi, args.quiet);
 
     let cfg = RestoreConfig {
         max_iter: args.max_iter,

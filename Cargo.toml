@@ -3,7 +3,7 @@ name = "cs-dmri"
 version = "0.1.0"
 edition = "2021"
 description = "Compressed-sensing reconstruction of diffusion MRI data with the 3D-SHORE basis"
-license = "(MIT OR Apache-2.0) AND MPL-2.0"
+license = "(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause"
 publish = false
 
 [lib]

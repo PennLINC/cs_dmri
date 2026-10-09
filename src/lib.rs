@@ -17,6 +17,7 @@ pub mod io;
 pub mod multitissue;
 pub mod odf;
 pub mod progress;
+pub mod qc;
 pub mod qspace;
 pub mod scalars;
 pub mod sh;

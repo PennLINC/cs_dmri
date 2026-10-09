@@ -98,6 +98,32 @@ and the synthetic-harness comparison in
 
 ---
 
+## Input quality control
+
+Every tool that reads a raw DWI (`cs-fit`, `cs-dti`, `cs-response`, `cs-ss3t`,
+`cs-ss3t-full`) first scores it inside the brain mask and prints, for example:
+
+```
+[cs-dti] input QC: NDC 0.926, DWI contrast 1.481 (good)
+```
+
+- **Neighboring DWI Correlation (NDC)** — the mean correlation between each
+  b>0 volume and its nearest neighbour in q-space (antipodally symmetric).
+  Below **0.4** is flagged as low quality (Yeh et al. 2019).
+- **DWI contrast** — mean neighbour correlation divided by the mean correlation
+  with each volume's most nearly perpendicular "contrast" volume. A series whose
+  volumes correlate as much with perpendicular directions as with neighbouring
+  ones carries little angular information. Conventionally **< 1.1 poor**,
+  1.1–1.3 fair, > 1.3 good (DSI Studio quality-control guide).
+
+Values in the low range print a `WARNING:` line; it isn't fatal. `--quiet`
+hides the summary line but not the warnings. The metrics are ports of dipy's
+`neighboring_dwi_correlation` and of `dwi_contrast` from
+[dipy PR #4224](https://github.com/dipy/dipy/pull/4224), which was unmerged when
+it was ported. On two qsiprep-preprocessed series (CS-DSI HASC92 and a
+multi-shell DTI) both match dipy to 6 decimal places, with identical neighbour
+and contrast pairings. The library API is in `cs_dmri::qc`.
+
 ## `cs-fit` — fit DWI to SHORE coefficients
 
 Loads a 4D DWI plus its FSL gradient files (`.bval` / `.bvec`) and an optional brain mask, fits a regularized 3D-SHORE coefficient field per in-mask voxel, and writes a 4D NIfTI of coefficients plus a JSON sidecar capturing the basis parameters, deltas, solver settings, and the bvec frame used.
@@ -725,9 +751,10 @@ cs-dmri is dual-licensed under either of
 - the [Apache License, Version 2.0](LICENSE-APACHE), or
 - the [MIT license](LICENSE-MIT),
 
-at your option, except for the MRtrix3-derived files listed below, which are
-licensed under the Mozilla Public License 2.0. The crate's SPDX expression is
-`(MIT OR Apache-2.0) AND MPL-2.0`.
+at your option, except for the third-party-derived code listed below: two
+MRtrix3-derived files under the Mozilla Public License 2.0, and dipy-derived
+functions under the BSD 3-Clause licence. The crate's SPDX expression is
+`(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause`.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in this work by you, as defined in the Apache-2.0 license, shall
@@ -754,3 +781,9 @@ does not reach the files that merely call into it, so the two licences coexist.
 Keeping that true is a maintenance constraint, not a formality — **do not copy
 MRtrix-derived logic out of these files into other modules**, and anyone
 redistributing cs-dmri must keep those files' source available under MPL-2.0.
+
+[`src/qc.rs`](src/qc.rs) contains functions ported from
+[dipy](https://dipy.org/) (`find_qspace_neighbors`, `neighboring_dwi_correlation`,
+and `find_qspace_contrast` / `dwi_contrast` from dipy PR #4224). Those are
+© 2008-2026 the dipy developers under the BSD 3-Clause licence; see
+[LICENSE-DIPY](LICENSE-DIPY).

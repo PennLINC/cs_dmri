@@ -179,6 +179,7 @@ fn main() -> Result<()> {
             mask_voxels
         );
     }
+    cs_dmri::qc::report_input_qc("cs-response", &dwi, args.quiet);
 
     // Step 1: RESTORE DTI fit.
     if !args.quiet {
