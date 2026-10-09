@@ -4,7 +4,7 @@ Compressed-sensing reconstruction of diffusion MRI data with the 3D-SHORE basis.
 
 ## What it does
 
-`cs-dmri` is a Rust crate plus eight command-line tools that:
+`cs-dmri` is a Rust crate plus nine command-line tools that:
 
 1. **Fit** raw 4D DWI volumes to a regularized 3D-SHORE coefficient field (`cs-fit`),
 2. **Project** those coefficients to Orientation Distribution Functions and fixels in the [ODX](../odx-rs) format (`cs-odf`),
@@ -13,7 +13,8 @@ Compressed-sensing reconstruction of diffusion MRI data with the 3D-SHORE basis.
 5. **Estimate** WM/GM/CSF tissue response functions from a single-shell DWI without external tools (`cs-response`),
 6. **Fit** a robust diffusion tensor (RESTORE algorithm) for FA/MD/outlier maps on clinical-quality DWI (`cs-dti`),
 7. **Normalise** SS3T tissue maps via a polynomial bias-field correction (`cs-mtnorm`),
-8. **Run the entire SS3T pipeline** in one command — DWI to normalised tissues with no MRtrix at runtime (`cs-ss3t-full`).
+8. **Run the entire SS3T pipeline** in one command — DWI to normalised tissues with no MRtrix at runtime (`cs-ss3t-full`),
+9. **Score image quality** — NDC, DWI contrast ratio, outlier slices and fixel coherence (`cs-qc`).
 
 The first three form the SHORE-basis compressed-sensing pipeline; `cs-fit`'s output is byte-for-byte compatible with qsirecon's BrainSuite SHORE pipeline (same basis ordering, same default regularization), but adds per-voxel BIC-driven α selection along an L1 regularization path — the "compressed sensing" path that gives the project its name. Peak extraction is delegated to `odx-rs::peak_finder`, which uses MRtrix-style sub-vertex Newton refinement of seeds taken from a discrete sphere search.
 
@@ -27,7 +28,7 @@ The first three form the SHORE-basis compressed-sensing pipeline; `cs-fit`'s out
 cargo build --release
 ```
 
-Binaries land in `target/release/{cs-fit,cs-odf,cs-synth,cs-ss3t,cs-response,cs-dti,cs-mtnorm,cs-ss3t-full}`.
+Binaries land in `target/release/{cs-fit,cs-odf,cs-synth,cs-ss3t,cs-response,cs-dti,cs-mtnorm,cs-ss3t-full,cs-qc}`.
 
 
 ## Running on HPC
@@ -98,31 +99,54 @@ and the synthetic-harness comparison in
 
 ---
 
-## Input quality control
+## Quality control (`cs-qc`)
 
-Every tool that reads a raw DWI (`cs-fit`, `cs-dti`, `cs-response`, `cs-ss3t`,
-`cs-ss3t-full`) first scores it inside the brain mask and prints, for example:
+`cs-qc` scores a DWI series and writes the results as JSON and/or a one-row TSV.
+The TSV gets a BIDS-style JSON data dictionary describing every column.
 
+```bash
+cs-qc --dwi dwi.nii.gz --bval dwi.bval --bvec dwi.bvec --mask brain_mask.nii.gz \
+      --output-tsv sub-01_desc-image_qc.tsv --prefix t1_ --output-json sub-01_qc.json
 ```
-[cs-dti] input QC: NDC 0.926, DWI contrast 1.481 (good)
-```
 
-- **Neighboring DWI Correlation (NDC)** — the mean correlation between each
-  b>0 volume and its nearest neighbour in q-space (antipodally symmetric).
-  Below **0.4** is flagged as low quality (Yeh et al. 2019).
-- **DWI contrast** — mean neighbour correlation divided by the mean correlation
-  with each volume's most nearly perpendicular "contrast" volume. A series whose
-  volumes correlate as much with perpendicular directions as with neighbouring
-  ones carries little angular information. Conventionally **< 1.1 poor**,
-  1.1–1.3 fair, > 1.3 good (DSI Studio quality-control guide).
+| Column | Definition | Replaces (DSI Studio, as named in qsiprep) |
+|---|---|---|
+| `dimension_{x,y,z}`, `voxel_size_{x,y,z}`, `max_b` | Header and gradient-table facts | same names |
+| `n_dwi_volumes`, `n_b0_volumes` | Volumes above / at or below the b=0 threshold | `num_directions` (counted volumes, not directions) |
+| `ndc`, `ndc_masked` | Neighboring DWI correlation over all voxels / inside the mask | `neighbor_corr`, `masked_neighbor_corr` |
+| `dwi_contrast_ratio`, `dwi_contrast_ratio_masked` | Neighbour correlation ÷ perpendicular-volume correlation | `dwi_contrast` |
+| `n_outlier_slices` | Slices that don't lie between their two adjacent slices in the same volume | `num_bad_slices` |
+| `fixel_coherence` | FA-weighted share of voxels whose principal direction continues coherently (0–1) | `coherence_index` |
 
-Values in the low range print a `WARNING:` line; it isn't fatal. `--quiet`
-hides the summary line but not the warnings. The metrics are ports of dipy's
-`neighboring_dwi_correlation` and of `dwi_contrast` from
-[dipy PR #4224](https://github.com/dipy/dipy/pull/4224), which was unmerged when
-it was ported. On two qsiprep-preprocessed series (CS-DSI HASC92 and a
-multi-shell DTI) both match dipy to 6 decimal places, with identical neighbour
-and contrast pairings. The library API is in `cs_dmri::qc`.
+The definitions differ from DSI Studio's on purpose, which is why the renamed
+columns have new names:
+
+- **NDC averages over every b>0 volume.** DSI Studio counts each neighbour pair
+  once, keyed on volume index, which makes its NDC depend on acquisition order:
+  0.970–0.977 under random reorderings of one HASC92 series, where this
+  definition gives 0.9733 every time. Repeats of the same q-space point are
+  never paired. The b=0 threshold is a parameter (`--b0-threshold`, default 50).
+- **Masks come from the caller.** DSI Studio uses its own internal mask, and its
+  construction changed between versions. On one series the contrast ratio is
+  1.12 unmasked, 1.48 inside a SynthStrip mask, 1.74 with DSI Studio 2024's mask
+  and 1.86 with DSI Studio 2026's. Without `--mask`, `cs-qc` falls back to
+  "mean b=0 above 1% of its maximum" and records `mask_source: auto-b0`.
+- **Outlier slices look only within a volume.** After in-plane smoothing
+  (σ = 2 voxels), a slice is flagged when its mean absolute deviation from the
+  average of its two adjacent slices exceeds 2.5 × half their mean absolute
+  difference. The maximum over about 64,000 slices of eight raw and
+  preprocessed qsiprep test series is 2.39. Injected dropout to 50% signal is
+  caught about 90% of the time, and to 70% about two times in three.
+- **Fixel coherence** uses odx-rs's primary coherence on the RESTORE principal
+  direction, weighted and thresholded by FA (lowest 10% dropped, 15°). It is a
+  0–1 fraction, unlike DSI Studio's unbounded index from a GQI fib.
+
+Every fitting tool (`cs-fit`, `cs-dti`, `cs-response`, `cs-ss3t`,
+`cs-ss3t-full`) also prints the masked NDC and contrast ratio of its input, with
+a `WARNING:` line when NDC < 0.4 (Yeh et al. 2019) or contrast < 1.1. The NDC
+neighbour search and the contrast-volume search are adapted from dipy (BSD-3;
+the contrast search from dipy PR #4224, a port of DSI Studio's definition made
+with Fang-Cheng Yeh's permission). The library API is `cs_dmri::qc`.
 
 ## `cs-fit` — fit DWI to SHORE coefficients
 

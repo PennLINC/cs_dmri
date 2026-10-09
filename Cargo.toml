@@ -42,6 +42,10 @@ path = "src/bin/cs-mtnorm.rs"
 name = "cs-ss3t-full"
 path = "src/bin/cs-ss3t-full.rs"
 
+[[bin]]
+name = "cs-qc"
+path = "src/bin/cs-qc.rs"
+
 [dependencies]
 nalgebra = "0.33"
 ndarray = "0.16"
