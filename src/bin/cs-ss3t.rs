@@ -220,6 +220,9 @@ fn main() -> Result<()> {
         || heartbeat.tick(),
     )
     .with_context(|| "ss3t fit failed")?;
+    for w in result.plan.lmax_clamp_warnings(responses.wm.lmax) {
+        eprintln!("[ss3t] {w}");
+    }
 
     heartbeat.finish();
 

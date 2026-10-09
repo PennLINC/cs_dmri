@@ -232,7 +232,7 @@ pub fn load_mask(path: &Path, expected_shape: [usize; 3]) -> Result<Array3<bool>
 /// Quick fallback mask: any voxel whose mean b0 signal exceeds 1% of the
 /// global max. Matches the spirit of qsirecon's Otsu fallback without the
 /// scikit-image dependency.
-fn default_mask_from_b0(data: &Array4<f32>, bvals: &[f64]) -> Array3<bool> {
+pub fn default_mask_from_b0(data: &Array4<f32>, bvals: &[f64]) -> Array3<bool> {
     let s = data.shape();
     let mut b0_mean = Array3::<f32>::zeros((s[0], s[1], s[2]));
     let mut count = 0_usize;
@@ -268,7 +268,7 @@ fn default_mask_from_b0(data: &Array4<f32>, bvals: &[f64]) -> Array3<bool> {
     b0_mean.mapv(|v| v > thresh)
 }
 
-fn parse_bvals(text: &str) -> Result<Vec<f64>> {
+pub fn parse_bvals(text: &str) -> Result<Vec<f64>> {
     text.split_whitespace()
         .map(|tok| {
             tok.parse::<f64>()
@@ -279,7 +279,7 @@ fn parse_bvals(text: &str) -> Result<Vec<f64>> {
 
 /// MRtrix `.b` parsing: one `x y z b` row per gradient (direction in world RAS);
 /// `#` comment lines and blank lines are skipped.
-fn parse_mrtrix_grad(text: &str) -> Result<(Vec<f64>, Vec<[f64; 3]>)> {
+pub fn parse_mrtrix_grad(text: &str) -> Result<(Vec<f64>, Vec<[f64; 3]>)> {
     let mut bvals = Vec::new();
     let mut dirs = Vec::new();
     for line in text.lines() {
@@ -305,7 +305,7 @@ fn parse_mrtrix_grad(text: &str) -> Result<(Vec<f64>, Vec<[f64; 3]>)> {
 }
 
 /// FSL bvec parsing: 3 lines (or 3 columns) with one entry per gradient.
-fn parse_bvecs(text: &str) -> Result<Vec<[f64; 3]>> {
+pub fn parse_bvecs(text: &str) -> Result<Vec<[f64; 3]>> {
     let lines: Vec<Vec<f64>> = text
         .lines()
         .map(|line| line.split_whitespace().map(|t| t.parse::<f64>()).collect())

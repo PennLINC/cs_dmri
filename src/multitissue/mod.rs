@@ -8,6 +8,7 @@
 pub mod dhollander;
 pub mod forward;
 pub mod mtnormalise;
+pub mod pipeline;
 pub mod response;
 pub mod response_estimation;
 pub mod sidecar;

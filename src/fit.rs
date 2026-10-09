@@ -525,3 +525,250 @@ where
         representative_alpha,
     }
 }
+
+// ------------------------------------------------------------------------
+// Whole-volume SHORE fit: the solver dispatch `cs-fit` exposes, as a library
+// call so the CLI and the Python bindings share one implementation.
+// ------------------------------------------------------------------------
+
+use crate::basis::Basis;
+use crate::basis::shore::ShoreBasis;
+use crate::io::coeffs::{ChosenAlpha, SolverMetadata};
+use crate::solver::AlphaPath;
+use crate::solver::IclsConfig;
+use crate::solver::fista::FistaSolver;
+use crate::solver::shore_icls::ShoreIclsSolver;
+use crate::{CsDmriError, Result};
+
+/// How an L1 fit picks its per-voxel α. Mirrors `cs-fit --alpha-mode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlphaMode {
+    Fixed,
+    AlphaRatio,
+    PathBic,
+    L2Anchored,
+}
+
+/// Validated [`AlphaStrategy`] for `mode`. `path_eps = None` takes the
+/// mode-dependent default: 1e-3 for path-BIC (backward compatible) and 1e-4
+/// for L2-anchored (lets the slack constraint bind on the whole path).
+pub fn build_alpha_strategy(
+    mode: AlphaMode,
+    alpha: f64,
+    alpha_ratio: f64,
+    path_n_alphas: usize,
+    path_eps: Option<f64>,
+    slack: f64,
+) -> Result<AlphaStrategy> {
+    let bad = CsDmriError::Other;
+    let path = |default_eps: f64| -> Result<AlphaPath> {
+        if path_n_alphas < 2 {
+            return Err(bad(format!("--path-n-alphas must be ≥ 2, got {path_n_alphas}")));
+        }
+        let eps = path_eps.unwrap_or(default_eps);
+        if !(eps > 0.0 && eps < 1.0) {
+            return Err(bad(format!("--path-eps must lie in (0, 1), got {eps}")));
+        }
+        Ok(AlphaPath { n: path_n_alphas, eps })
+    };
+    Ok(match mode {
+        AlphaMode::Fixed => AlphaStrategy::Fixed { alpha },
+        AlphaMode::AlphaRatio => {
+            if !(alpha_ratio > 0.0 && alpha_ratio < 1.0) {
+                return Err(bad(format!("--alpha-ratio must lie in (0, 1), got {alpha_ratio}")));
+            }
+            AlphaStrategy::AlphaMaxRatio { ratio: alpha_ratio }
+        }
+        AlphaMode::PathBic => AlphaStrategy::PathBic { path: path(1e-3)? },
+        AlphaMode::L2Anchored => {
+            let path = path(1e-4)?;
+            if slack < 0.0 {
+                return Err(bad(format!("--slack must be ≥ 0, got {slack}")));
+            }
+            AlphaStrategy::PathL2Anchored { path, slack }
+        }
+    })
+}
+
+/// Regularization for [`fit_shore`].
+#[derive(Debug, Clone)]
+pub enum ShoreRegularization {
+    /// FISTA L1 with a per-voxel (or fixed) α strategy. `seed_alpha` only
+    /// feeds the α-independent Lipschitz cache; the strategy overwrites it.
+    L1 {
+        strategy: AlphaStrategy,
+        max_iter: u32,
+        tol: f64,
+        non_negative: bool,
+        seed_alpha: f64,
+    },
+    /// Closed-form Tikhonov.
+    L2,
+    /// Goldfarb-Idnani ICLS with non-negative ODF amplitudes on a dense sphere,
+    /// at `lmax = default_lmax(radial_order)`.
+    AmpNonNeg { icls: IclsConfig },
+}
+
+/// Everything [`fit_shore`] needs besides the data.
+#[derive(Debug, Clone)]
+pub struct ShoreFitSpec {
+    pub radial_order: u32,
+    pub zeta: f64,
+    pub regularization: ShoreRegularization,
+    /// Tikhonov weights for `L2`, and for the L2 reference of `PathL2Anchored`.
+    pub lambda_n: f64,
+    pub lambda_l: f64,
+    pub compute_diagnostics: bool,
+}
+
+impl Default for ShoreFitSpec {
+    /// `cs-fit` defaults: radial order 6, ζ = 700, L1 with L2-anchored α.
+    fn default() -> Self {
+        Self {
+            radial_order: 6,
+            zeta: 700.0,
+            regularization: ShoreRegularization::L1 {
+                strategy: AlphaStrategy::PathL2Anchored {
+                    path: AlphaPath { n: 20, eps: 1e-4 },
+                    slack: 0.05,
+                },
+                max_iter: 1000,
+                tol: 1e-6,
+                non_negative: false,
+                seed_alpha: 1.0,
+            },
+            lambda_n: 1e-8,
+            lambda_l: 1e-8,
+            compute_diagnostics: false,
+        }
+    }
+}
+
+/// Output of [`fit_shore`].
+pub struct ShoreFitOutput {
+    pub basis: ShoreBasis,
+    pub result: FitResult,
+    /// Solver description for the coefficient sidecar.
+    pub solver: SolverMetadata,
+    /// `(median, p10, p90)` of the per-voxel α, for per-voxel α strategies.
+    pub alpha_distribution: Option<(f64, f64, f64)>,
+}
+
+/// Fit a SHORE basis to every masked voxel of `dwi` with the solver `spec`
+/// selects. `on_voxel` runs once per fitted voxel, on rayon workers.
+pub fn fit_shore<F>(dwi: &DwiData, spec: &ShoreFitSpec, on_voxel: F) -> Result<ShoreFitOutput>
+where
+    F: Fn() + Sync,
+{
+    let basis = ShoreBasis::new(spec.radial_order, spec.zeta);
+    let design = basis.design_matrix(&dwi.gtab);
+    let regularization = basis.regularization();
+    let cfg = FitConfig {
+        compute_diagnostics: spec.compute_diagnostics,
+    };
+    let n_coeffs = basis.n_coeffs();
+    let tikhonov =
+        || TikhonovSolver::new(design.clone(), &regularization, spec.lambda_n, spec.lambda_l);
+
+    let (result, solver, alpha_distribution) = match &spec.regularization {
+        ShoreRegularization::L1 {
+            strategy,
+            max_iter,
+            tol,
+            non_negative,
+            seed_alpha,
+        } => {
+            let base =
+                FistaSolver::new(design.clone(), seed_alpha.max(1e-12), *max_iter, *tol, *non_negative);
+            let fit = if matches!(strategy, AlphaStrategy::PathL2Anchored { .. }) {
+                fit_volume_with_alpha_strategy_l2_anchored_reporting(
+                    dwi, &design, &base, &tikhonov(), strategy, n_coeffs, cfg, on_voxel,
+                )
+            } else {
+                fit_volume_with_alpha_strategy_reporting(
+                    dwi, &design, &base, strategy, n_coeffs, cfg, on_voxel,
+                )
+            };
+            let chosen_alpha = match (strategy, fit.alpha_distribution) {
+                (AlphaStrategy::Fixed { alpha }, _) => ChosenAlpha::Global { alpha: *alpha },
+                (_, Some((median, p10, p90))) => ChosenAlpha::PerVoxel { median, p10, p90 },
+                (_, None) => ChosenAlpha::Global {
+                    alpha: fit.representative_alpha,
+                },
+            };
+            let meta = SolverMetadata::Fista {
+                alpha_strategy: strategy.clone(),
+                chosen_alpha,
+                non_negative: *non_negative,
+                max_iter: *max_iter,
+                tol: *tol,
+            };
+            (fit.result, meta, fit.alpha_distribution)
+        }
+        ShoreRegularization::L2 => {
+            let r = fit_volume_reporting(dwi, &design, &tikhonov(), n_coeffs, cfg, on_voxel);
+            let meta = SolverMetadata::Tikhonov {
+                lambda_n: spec.lambda_n,
+                lambda_l: spec.lambda_l,
+            };
+            (r, meta, None)
+        }
+        ShoreRegularization::AmpNonNeg { icls } => {
+            let lmax = crate::odf::default_lmax(spec.radial_order);
+            let solver = ShoreIclsSolver::new(design.clone(), &basis, lmax, *icls);
+            let r = fit_volume_reporting(dwi, &design, &solver, n_coeffs, cfg, on_voxel);
+            let meta = SolverMetadata::ShoreIcls {
+                lmax,
+                n_constraint_dirs: solver.n_constraint_dirs(),
+                max_iter: icls.max_iter,
+                tol: icls.tol,
+                epsilon: icls.epsilon,
+            };
+            (r, meta, None)
+        }
+    };
+    Ok(ShoreFitOutput {
+        basis,
+        result,
+        solver,
+        alpha_distribution,
+    })
+}
+
+/// Per-voxel sparsity: fraction of strictly-nonzero coefficients. FISTA's
+/// soft-threshold returns exact zeros, so no tolerance is needed; for L2 this
+/// is essentially 1.0 everywhere.
+pub fn sparsity_map(coeffs: &Array4<f32>, mask: &ndarray::Array3<bool>) -> ndarray::Array3<f32> {
+    let s = coeffs.shape();
+    let (nx, ny, nz, nk) = (s[0], s[1], s[2], s[3]);
+    let denom = nk as f32;
+    let mut out = ndarray::Array3::<f32>::zeros((nx, ny, nz));
+    for x in 0..nx {
+        for y in 0..ny {
+            for z in 0..nz {
+                if !mask[(x, y, z)] {
+                    continue;
+                }
+                let nnz = (0..nk).filter(|&k| coeffs[(x, y, z, k)] != 0.0).count();
+                out[(x, y, z)] = nnz as f32 / denom;
+            }
+        }
+    }
+    out
+}
+
+/// RMSE = ‖Mc − s‖₂ / √n_grads, from the per-voxel residual L2 norm.
+pub fn rmse_from_residual_l2(residual_l2: &ndarray::Array3<f32>, n_grads: usize) -> ndarray::Array3<f32> {
+    let denom = (n_grads as f32).sqrt();
+    residual_l2.mapv(|r| r / denom)
+}
+
+/// Mean of `arr` over `mask`, 0 for an empty mask.
+pub fn mean_in_mask(arr: &ndarray::Array3<f32>, mask: &ndarray::Array3<bool>) -> f64 {
+    let (sum, count) = arr
+        .iter()
+        .zip(mask.iter())
+        .filter(|(_, m)| **m)
+        .fold((0.0_f64, 0_usize), |(s, c), (v, _)| (s + *v as f64, c + 1));
+    if count == 0 { 0.0 } else { sum / count as f64 }
+}

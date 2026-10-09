@@ -124,6 +124,9 @@ pub struct Ss3tPlan {
     pub n_aug: usize,
     /// Effective WM lmax after clamping to the response file.
     pub lmax_wm: usize,
+    /// WM lmax the caller asked for; larger than `lmax_wm` when the WM
+    /// response declares a lower lmax (see [`Ss3tVolumePlan::lmax_clamp_warnings`]).
+    pub requested_lmax_wm: usize,
     /// Number of WM SH coefficients (= ncoeffs_for_lmax(lmax_wm)).
     pub n_sh_wm: usize,
     /// b=0 weighting factor `w = sqrt(n_dwi · bzero_pct / (n_b0 · 100))`.
@@ -225,12 +228,6 @@ impl Ss3tPlan {
                 lmax_wm
             )));
         }
-        if lmax_wm < requested_lmax {
-            eprintln!(
-                "[ss3t] WM response file declares lmax={}, requested lmax_wm={} — clamping to {}.",
-                responses.wm.lmax, requested_lmax, lmax_wm
-            );
-        }
         let n_sh_wm = ncoeffs_for_lmax(lmax_wm);
 
         // Scale row-0 of every response by bzero_sw. The b=0 row of each
@@ -293,6 +290,7 @@ impl Ss3tPlan {
         Ok(Self {
             n_aug,
             lmax_wm,
+            requested_lmax_wm: requested_lmax,
             n_sh_wm,
             bzero_sw,
             signal_weight,
@@ -440,6 +438,23 @@ pub struct Ss3tVolumePlan {
     pub n_aug: usize,
     /// Strategy used to build this plan.
     pub strategy: LmaxWmStrategy,
+}
+
+impl Ss3tVolumePlan {
+    /// One message per candidate whose requested WM lmax was clamped to the
+    /// WM response's lmax. Empty when nothing was clamped.
+    pub fn lmax_clamp_warnings(&self, response_lmax: usize) -> Vec<String> {
+        self.plans
+            .iter()
+            .filter(|p| p.lmax_wm < p.requested_lmax_wm)
+            .map(|p| {
+                format!(
+                    "WM response file declares lmax={}, requested lmax_wm={} — clamping to {}.",
+                    response_lmax, p.requested_lmax_wm, p.lmax_wm
+                )
+            })
+            .collect()
+    }
 }
 
 impl Ss3tVolumePlan {

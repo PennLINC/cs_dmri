@@ -15,23 +15,24 @@
 //! until the final outputs.
 
 use std::path::PathBuf;
+use std::sync::RwLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use cs_dmri::dti::{DtiFitConfig, RestoreConfig, fit_volume_restore_reporting};
+use cs_dmri::dti::RestoreConfig;
 use cs_dmri::io::aux::{sibling_path, write_3d_f32, write_3d_u32_as_f32, write_3d_u8, write_4d_f32};
 use cs_dmri::io::dwi::load_dwi;
-use cs_dmri::multitissue::mtnormalise::{
-    MtnormaliseConfig, mtnormalise, target_sum_mrtrix_default,
+use cs_dmri::multitissue::mtnormalise::{MtnormaliseConfig, target_sum_mrtrix_default};
+use cs_dmri::multitissue::pipeline::{
+    PipelineObserver, PipelineStage, ResponseSource, Ss3tPipelineConfig, ss3t_pipeline,
 };
 use cs_dmri::multitissue::response_estimation::{
-    DhollanderConfig, DhollanderSelectConfig, estimate_responses, write_response_txt,
+    DhollanderConfig, DhollanderSelectConfig, write_response_txt,
 };
 use cs_dmri::multitissue::ss3t::{Ss3tConfig, Ss3tResponses, LmaxWmStrategy};
 use cs_dmri::multitissue::TissueResponse;
-use cs_dmri::multitissue::volume::{Ss3tFitConfig, fit_volume_ss3t_reporting};
 use cs_dmri::qspace::{BvecFrame, TORTOISE_DEFAULT_GMAX};
 use cs_dmri::solver::icls::IclsConfig;
 use cs_dmri::{
@@ -246,62 +247,81 @@ fn main() -> Result<()> {
     }
     cs_dmri::qc::report_input_qc("cs-ss3t-full", &dwi, args.quiet);
 
-    // ---- Stage 1: responses (estimate or load) ----
+    // ---- Stages 1-3: responses → SS3T → mtnormalise ----
     let interval = Duration::from_secs(args.progress_interval_secs.max(1));
-    let responses = if args.response_wm.is_some() {
+    let response_source = if args.response_wm.is_some() {
         let wm_path = args.response_wm.as_ref().unwrap();
         let gm_path = args.response_gm.as_ref().unwrap();
         let csf_path = args.response_csf.as_ref().unwrap();
-        if !args.quiet {
-            eprintln!(
-                "[cs-ss3t-full] stage 1/3: loading provided responses (skipping estimation)"
-            );
-        }
-        Ss3tResponses {
+        ResponseSource::Provided(Ss3tResponses {
             wm: TissueResponse::parse_mrtrix_txt(wm_path)
                 .with_context(|| format!("parse {:?}", wm_path))?,
             gm: TissueResponse::parse_mrtrix_txt(gm_path)
                 .with_context(|| format!("parse {:?}", gm_path))?,
             csf: TissueResponse::parse_mrtrix_txt(csf_path)
                 .with_context(|| format!("parse {:?}", csf_path))?,
-        }
+        })
     } else {
-        if !args.quiet {
-            eprintln!(
-                "[cs-ss3t-full] stage 1/3: estimating responses via Dhollander 2016 (RESTORE DTI + tissue selection)"
-            );
-        }
-        let restore_cfg = RestoreConfig {
-            max_iter: args.restore_max_iter,
-            tol: args.restore_tol,
-            ..RestoreConfig::default()
-        };
-        let dti_hb = Heartbeat::new("dti", mask_voxels, interval, args.quiet);
-        let dti = fit_volume_restore_reporting(
-            &dwi,
-            &restore_cfg,
-            DtiFitConfig { compute_diagnostics: false },
-            || dti_hb.tick(),
-        )
-        .with_context(|| "DTI fit failed")?;
-        dti_hb.finish();
-        let cfg = DhollanderConfig {
-            fa_wm_threshold: args.fa_wm_threshold,
-            fiber_dominance_ratio: args.fiber_dominance_ratio,
-            md_csf_pct: args.md_csf_pct,
-            lmax_wm: args.lmax_wm,
-            legacy_selection: args.legacy_tissue_selection,
-            stages: DhollanderSelectConfig {
-                erode: args.dh_erode,
-                fa: args.dh_fa,
-                sfwm_pct: args.dh_sfwm,
-                gm_pct: args.dh_gm,
-                csf_pct: args.dh_csf,
-                ..DhollanderSelectConfig::default()
+        ResponseSource::Estimate {
+            restore: RestoreConfig {
+                max_iter: args.restore_max_iter,
+                tol: args.restore_tol,
+                ..RestoreConfig::default()
             },
-        };
-        let estimate =
-            estimate_responses(&dwi, &dti, &cfg).with_context(|| "response estimation failed")?;
+            dhollander: DhollanderConfig {
+                fa_wm_threshold: args.fa_wm_threshold,
+                fiber_dominance_ratio: args.fiber_dominance_ratio,
+                md_csf_pct: args.md_csf_pct,
+                lmax_wm: args.lmax_wm,
+                legacy_selection: args.legacy_tissue_selection,
+                stages: DhollanderSelectConfig {
+                    erode: args.dh_erode,
+                    fa: args.dh_fa,
+                    sfwm_pct: args.dh_sfwm,
+                    gm_pct: args.dh_gm,
+                    csf_pct: args.dh_csf,
+                    ..DhollanderSelectConfig::default()
+                },
+            },
+        }
+    };
+    let estimating = matches!(response_source, ResponseSource::Estimate { .. });
+    let pipeline_cfg = Ss3tPipelineConfig {
+        responses: response_source,
+        ss3t: Ss3tConfig {
+            niter: args.niter,
+            bzero_pct: args.bzero_pct,
+            lmax_wm: LmaxWmStrategy::Fixed(args.lmax_wm),
+            icls: IclsConfig::default(),
+        },
+        compute_diagnostics: args.diagnostics,
+        normalize: (!args.no_normalize).then(|| MtnormaliseConfig {
+            poly_order: args.mtnorm_poly_order,
+            target_sum: if args.mtnorm_target_median {
+                None
+            } else {
+                Some(target_sum_mrtrix_default())
+            },
+            apply_balance: args.mtnorm_balanced,
+            ..MtnormaliseConfig::default()
+        }),
+    };
+    if !args.quiet && !estimating {
+        eprintln!("[cs-ss3t-full] stage 1/3: loading provided responses (skipping estimation)");
+    }
+    let observer = StageProgress {
+        current: RwLock::new(None),
+        mask_voxels,
+        interval,
+        quiet: args.quiet,
+    };
+    let out = ss3t_pipeline(&dwi, &pipeline_cfg, &observer).with_context(|| "SS3T pipeline failed")?;
+    observer.finish_current();
+    for w in &out.warnings {
+        eprintln!("[ss3t] {w}");
+    }
+
+    if let Some((estimate, _dti)) = &out.estimate {
         if !args.quiet {
             let d = &estimate.diagnostics;
             eprintln!(
@@ -316,73 +336,29 @@ fn main() -> Result<()> {
         }
         if let Some(dir) = &args.write_responses_to {
             std::fs::create_dir_all(dir).ok();
-            let wm_p = dir.join("wm_response.txt");
-            let gm_p = dir.join("gm_response.txt");
-            let csf_p = dir.join("csf_response.txt");
-            write_response_txt(&estimate.wm, &wm_p)
-                .with_context(|| format!("write {:?}", wm_p))?;
-            write_response_txt(&estimate.gm, &gm_p)
-                .with_context(|| format!("write {:?}", gm_p))?;
-            write_response_txt(&estimate.csf, &csf_p)
-                .with_context(|| format!("write {:?}", csf_p))?;
+            for (tissue, name) in [
+                (&estimate.wm, "wm_response.txt"),
+                (&estimate.gm, "gm_response.txt"),
+                (&estimate.csf, "csf_response.txt"),
+            ] {
+                let p = dir.join(name);
+                write_response_txt(tissue, &p).with_context(|| format!("write {:?}", p))?;
+            }
             if !args.quiet {
                 eprintln!("[cs-ss3t-full]   wrote responses → {}", dir.display());
             }
         }
-        Ss3tResponses {
-            wm: estimate.wm,
-            gm: estimate.gm,
-            csf: estimate.csf,
-        }
-    };
-
-    // ---- Stage 2: SS3T ----
-    if !args.quiet {
-        eprintln!("[cs-ss3t-full] stage 2/3: SS3T iterative tissue decomposition");
     }
-    let cfg = Ss3tConfig {
-        niter: args.niter,
-        bzero_pct: args.bzero_pct,
-        lmax_wm: LmaxWmStrategy::Fixed(args.lmax_wm),
-        icls: IclsConfig::default(),
-    };
-    let ss3t_hb = Heartbeat::new("ss3t", mask_voxels, interval, args.quiet);
-    let mut result = fit_volume_ss3t_reporting(
-        &dwi,
-        &responses,
-        &cfg,
-        Ss3tFitConfig { compute_diagnostics: args.diagnostics },
-        || ss3t_hb.tick(),
-    )
-    .with_context(|| "ss3t fit failed")?;
-    ss3t_hb.finish();
-
-    // ---- Stage 3: mtnormalise (optional) ----
-    if !args.no_normalize {
-        if !args.quiet {
-            eprintln!("[cs-ss3t-full] stage 3/3: mtnormalise (polynomial bias-field correction)");
-        }
-        let mtcfg = MtnormaliseConfig {
-            poly_order: args.mtnorm_poly_order,
-            target_sum: if args.mtnorm_target_median {
-                None
-            } else {
-                Some(target_sum_mrtrix_default())
-            },
-            apply_balance: args.mtnorm_balanced,
-            ..MtnormaliseConfig::default()
-        };
-        let diag = mtnormalise(&mut result.wm, &mut result.gm, &mut result.csf, &dwi.mask, &mtcfg)
-            .with_context(|| "mtnormalise failed")?;
-        if !args.quiet {
-            eprintln!(
-                "[cs-ss3t-full]   target_sum={:.4}  fit voxels={}  mean |log residual|={:.3e}",
-                diag.target_sum_used, diag.n_fit_voxels, diag.mean_abs_log_residual
-            );
-        }
-    } else if !args.quiet {
-        eprintln!("[cs-ss3t-full] stage 3/3: skipped (--no-normalize)");
+    match &out.normalization {
+        Some(diag) if !args.quiet => eprintln!(
+            "[cs-ss3t-full]   target_sum={:.4}  fit voxels={}  mean |log residual|={:.3e}",
+            diag.target_sum_used, diag.n_fit_voxels, diag.mean_abs_log_residual
+        ),
+        None if !args.quiet => eprintln!("[cs-ss3t-full] stage 3/3: skipped (--no-normalize)"),
+        _ => {}
     }
+    let responses = out.responses;
+    let result = out.fit;
 
     // ---- Write outputs ----
     if let Some(odx_path) = &args.odx {
@@ -394,7 +370,9 @@ fn main() -> Result<()> {
             &result.wm,
             &result.gm,
             &result.csf,
-            args.lmax_wm,
+            // The effective lmax, not `--lmax-wm`: SS3T clamps to the WM
+            // response's lmax, and the ODX SH order must match the WM channels.
+            result.plan.plans[0].lmax_wm,
             &responses,
             args.overwrite,
             directory,
@@ -438,4 +416,50 @@ fn main() -> Result<()> {
     let _provenance = provenance_builder.map(|b| b.finish(effective_thread_count()));
 
     Ok(())
+}
+
+/// Prints the stage banners and runs one heartbeat per per-voxel stage.
+struct StageProgress {
+    current: RwLock<Option<Heartbeat>>,
+    mask_voxels: usize,
+    interval: Duration,
+    quiet: bool,
+}
+
+impl StageProgress {
+    fn finish_current(&self) {
+        if let Some(hb) = self.current.write().unwrap().take() {
+            hb.finish();
+        }
+    }
+}
+
+impl PipelineObserver for StageProgress {
+    fn stage(&self, stage: PipelineStage) {
+        self.finish_current();
+        let (banner, label) = match stage {
+            PipelineStage::Dti => (
+                Some("stage 1/3: estimating responses via Dhollander 2016 (RESTORE DTI + tissue selection)"),
+                Some("dti"),
+            ),
+            PipelineStage::ResponseEstimation => (None, None),
+            PipelineStage::Ss3t => (Some("stage 2/3: SS3T iterative tissue decomposition"), Some("ss3t")),
+            PipelineStage::Normalize => {
+                (Some("stage 3/3: mtnormalise (polynomial bias-field correction)"), None)
+            }
+        };
+        if let (Some(b), false) = (banner, self.quiet) {
+            eprintln!("[cs-ss3t-full] {b}");
+        }
+        if let Some(label) = label {
+            *self.current.write().unwrap() =
+                Some(Heartbeat::new(label, self.mask_voxels, self.interval, self.quiet));
+        }
+    }
+
+    fn voxel(&self) {
+        if let Some(hb) = self.current.read().unwrap().as_ref() {
+            hb.tick();
+        }
+    }
 }

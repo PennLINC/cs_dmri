@@ -4,21 +4,18 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use cs_dmri::basis::Basis;
+use cs_dmri::fit::{
+    ShoreFitSpec, ShoreRegularization, build_alpha_strategy, fit_shore, mean_in_mask,
+    rmse_from_residual_l2, sparsity_map,
+};
 use cs_dmri::io::aux::{ensure_nifti_extension, precheck_writable, sibling_path, write_3d_f32};
-use cs_dmri::io::coeffs::{ChosenAlpha, CoefficientsFile, SidecarMetadata, SolverMetadata};
+use cs_dmri::io::coeffs::{CoefficientsFile, SidecarMetadata};
 use cs_dmri::io::dwi::load_dwi;
 use cs_dmri::qspace::{BvecFrame, TORTOISE_DEFAULT_GMAX};
-use cs_dmri::solver::fista::FistaSolver;
-use cs_dmri::fit::fit_volume_with_alpha_strategy_l2_anchored_reporting;
-use cs_dmri::solver::tikhonov::TikhonovSolver;
-use cs_dmri::solver::{AlphaPath, AlphaStrategy};
-use cs_dmri::{
-    FitConfig, Heartbeat, ProvenanceBuilder, ProvenanceMode, ShoreBasis,
-    effective_thread_count, fit_volume_reporting, fit_volume_with_alpha_strategy_reporting,
-};
+use cs_dmri::{Heartbeat, ProvenanceBuilder, ProvenanceMode, effective_thread_count};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Regularization {
@@ -257,132 +254,61 @@ fn main() -> Result<()> {
     }
     cs_dmri::qc::report_input_qc("cs-fit", &dwi, args.quiet);
 
-    let basis = ShoreBasis::new(args.radial_order, args.zeta);
-    let design = basis.design_matrix(&dwi.gtab);
-    let regularization = basis.regularization();
-
-    let cfg = FitConfig {
+    let regularization = match args.reg {
+        Regularization::L1 => ShoreRegularization::L1 {
+            strategy: build_alpha_strategy(
+                args.alpha_mode.into(),
+                args.alpha,
+                args.alpha_ratio,
+                args.path_n_alphas,
+                args.path_eps,
+                args.slack,
+            )?,
+            max_iter: args.max_iter,
+            tol: args.tol,
+            non_negative: args.non_negative,
+            seed_alpha: args.alpha,
+        },
+        Regularization::L2 => ShoreRegularization::L2,
+        Regularization::AmpNn => ShoreRegularization::AmpNonNeg {
+            icls: cs_dmri::solver::IclsConfig {
+                max_iter: args.amp_nn_max_iter,
+                tol: args.amp_nn_tol,
+                epsilon: args.amp_nn_epsilon,
+            },
+        },
+    };
+    let spec = ShoreFitSpec {
+        radial_order: args.radial_order,
+        zeta: args.zeta,
+        regularization,
+        lambda_n: args.lambda_n,
+        lambda_l: args.lambda_l,
         compute_diagnostics: args.diagnostics,
     };
 
     let interval = Duration::from_secs(args.progress_interval_secs.max(1));
     let heartbeat = Heartbeat::new("cs-fit", mask_voxels, interval, args.quiet);
-
-    let (coefficients, diagnostics, solver_meta) = match args.reg {
-        Regularization::L1 => {
-            let strategy = build_alpha_strategy(&args)?;
-            // The base solver's `alpha` field is overwritten per-voxel; the
-            // initial value just feeds the (alpha-independent) Lipschitz cache.
-            let base = FistaSolver::new(
-                design.clone(),
-                args.alpha.max(1e-12),
-                args.max_iter,
-                args.tol,
-                args.non_negative,
-            );
-            // PathL2Anchored needs a per-voxel L2 reference. Build the
-            // Tikhonov solver once (cached Cholesky) and share read-only
-            // across rayon workers.
-            let fit = if matches!(strategy, AlphaStrategy::PathL2Anchored { .. }) {
-                let l2 = TikhonovSolver::new(
-                    design.clone(),
-                    &regularization,
-                    args.lambda_n,
-                    args.lambda_l,
-                );
-                fit_volume_with_alpha_strategy_l2_anchored_reporting(
-                    &dwi,
-                    &design,
-                    &base,
-                    &l2,
-                    &strategy,
-                    basis.n_coeffs(),
-                    cfg,
-                    || heartbeat.tick(),
-                )
-            } else {
-                fit_volume_with_alpha_strategy_reporting(
-                    &dwi,
-                    &design,
-                    &base,
-                    &strategy,
-                    basis.n_coeffs(),
-                    cfg,
-                    || heartbeat.tick(),
-                )
-            };
-            let chosen = match (&strategy, fit.alpha_distribution) {
-                (AlphaStrategy::Fixed { alpha }, _) => ChosenAlpha::Global { alpha: *alpha },
-                (_, Some((median, p10, p90))) => ChosenAlpha::PerVoxel { median, p10, p90 },
-                (_, None) => ChosenAlpha::Global { alpha: fit.representative_alpha },
-            };
-            if !args.quiet {
-                if let Some((m, p10, p90)) = fit.alpha_distribution {
-                    eprintln!(
-                        "[cs-fit] α distribution (per-voxel): p10={:.3e}, median={:.3e}, p90={:.3e}",
-                        p10, m, p90
-                    );
-                } else {
-                    eprintln!("[cs-fit] α (global): {:.3e}", fit.representative_alpha);
-                }
-            }
-            let meta = SolverMetadata::Fista {
-                alpha_strategy: strategy,
-                chosen_alpha: chosen,
-                non_negative: args.non_negative,
-                max_iter: args.max_iter,
-                tol: args.tol,
-            };
-            (fit.result.coefficients, fit.result.diagnostics, meta)
+    let fit = fit_shore(&dwi, &spec, || heartbeat.tick())?;
+    if !args.quiet && matches!(args.reg, Regularization::L1) {
+        match (fit.alpha_distribution, &fit.solver) {
+            (Some((m, p10, p90)), _) => eprintln!(
+                "[cs-fit] α distribution (per-voxel): p10={:.3e}, median={:.3e}, p90={:.3e}",
+                p10, m, p90
+            ),
+            (
+                None,
+                cs_dmri::io::coeffs::SolverMetadata::Fista {
+                    chosen_alpha: cs_dmri::io::coeffs::ChosenAlpha::Global { alpha },
+                    ..
+                },
+            ) => eprintln!("[cs-fit] α (global): {:.3e}", alpha),
+            _ => {}
         }
-        Regularization::L2 => {
-            let solver =
-                TikhonovSolver::new(design.clone(), &regularization, args.lambda_n, args.lambda_l);
-            let r = fit_volume_reporting(
-                &dwi,
-                &design,
-                &solver,
-                basis.n_coeffs(),
-                cfg,
-                || heartbeat.tick(),
-            );
-            let meta = SolverMetadata::Tikhonov {
-                lambda_n: args.lambda_n,
-                lambda_l: args.lambda_l,
-            };
-            (r.coefficients, r.diagnostics, meta)
-        }
-        Regularization::AmpNn => {
-            let lmax = cs_dmri::odf::default_lmax(args.radial_order);
-            let icls_cfg = cs_dmri::solver::IclsConfig {
-                max_iter: args.amp_nn_max_iter,
-                tol: args.amp_nn_tol,
-                epsilon: args.amp_nn_epsilon,
-            };
-            let solver = cs_dmri::solver::ShoreIclsSolver::new(
-                design.clone(),
-                &basis,
-                lmax,
-                icls_cfg,
-            );
-            let r = fit_volume_reporting(
-                &dwi,
-                &design,
-                &solver,
-                basis.n_coeffs(),
-                cfg,
-                || heartbeat.tick(),
-            );
-            let meta = SolverMetadata::ShoreIcls {
-                lmax,
-                n_constraint_dirs: solver.n_constraint_dirs(),
-                max_iter: args.amp_nn_max_iter,
-                tol: args.amp_nn_tol,
-                epsilon: args.amp_nn_epsilon,
-            };
-            (r.coefficients, r.diagnostics, meta)
-        }
-    };
+    }
+    let basis = fit.basis;
+    let (coefficients, diagnostics, solver_meta) =
+        (fit.result.coefficients, fit.result.diagnostics, fit.solver);
 
     heartbeat.finish();
 
@@ -523,135 +449,42 @@ fn write_odx_from_fit(
     quiet: bool,
     progress_interval_secs: u64,
 ) -> Result<()> {
-    use cs_dmri::io::microstructure::{
-        MicrostructureOptions, compute_microstructure, embed_microstructure_dpvs,
-    };
+    use cs_dmri::io::microstructure::MicrostructureOptions;
     use cs_dmri::io::odx_out::{
-        ShoreOdxOptions, ShoreOdxPeakOpts, build_shore_odx, canonicalize_array3_f32,
-        canonicalize_array4, canonicalize_bool_mask, finalize_and_write_odx,
+        ShoreOdxOptions, ShoreOdxPeakOpts, ShoreToOdxOptions, finalize_and_write_odx,
+        shore_coeffs_to_odx,
     };
-    use odx_rs::CanonTransform;
     use odx_rs::reference_affine::read_reference_affine;
 
     let raw_affine = read_reference_affine(dwi_ref)
         .map_err(|e| anyhow::anyhow!("read affine from {:?}: {e}", dwi_ref))?;
-    let canon = CanonTransform::from_affine(raw_affine);
-    let (coeffs, affine) = canonicalize_array4(raw_coeffs, raw_affine, &canon)?;
-    let mask = canonicalize_bool_mask(raw_mask, raw_affine, &canon)?;
-
-    let canon_dpvs: Vec<(&'static str, ndarray::Array3<f32>)> = raw_diag_dpvs
-        .iter()
-        .map(|(name, arr)| Ok((*name, canonicalize_array3_f32(arr, raw_affine, &canon)?)))
-        .collect::<Result<_>>()?;
     let dpv_refs: Vec<(&str, &ndarray::Array3<f32>)> =
-        canon_dpvs.iter().map(|(n, a)| (*n, a)).collect();
-
-    let lmax = cs_dmri::odf::default_lmax(basis.radial_order);
-    let opts = ShoreOdxOptions {
-        peaks: Some(ShoreOdxPeakOpts::default()),
-        progress_interval_secs,
-        quiet,
-        ..ShoreOdxOptions::default()
+        raw_diag_dpvs.iter().map(|(n, a)| (*n, a)).collect();
+    let opts = ShoreToOdxOptions {
+        lmax: None,
+        odx: ShoreOdxOptions {
+            peaks: Some(ShoreOdxPeakOpts::default()),
+            progress_interval_secs,
+            quiet,
+            ..ShoreOdxOptions::default()
+        },
+        microstructure: Some(MicrostructureOptions { quiet, ..MicrostructureOptions::default() }),
     };
-    let mut built = build_shore_odx(&coeffs, affine, &mask, basis, lmax, &dpv_refs, &opts)?;
-
-    let mopts = MicrostructureOptions { quiet, ..MicrostructureOptions::default() };
-    let scalars = compute_microstructure(
-        basis,
-        &coeffs,
-        &built.masked_indices,
-        built.peak0_dirs.as_deref(),
-        &mopts,
-    );
-    embed_microstructure_dpvs(&mut built.builder, &scalars);
-
-    finalize_and_write_odx(built.builder, odx_path, overwrite, directory)
+    let out = shore_coeffs_to_odx(raw_coeffs, raw_affine, Some(raw_mask), basis, &dpv_refs, &opts)?;
+    finalize_and_write_odx(out.build.builder, odx_path, overwrite, directory)
         .with_context(|| format!("write ODX {:?}", odx_path))?;
     Ok(())
 }
 
-/// Per-voxel sparsity: fraction of strictly-nonzero SH coefficients in the
-/// fitted vector. FISTA's soft-threshold returns exact zeros, so no tolerance
-/// is needed; for L2 this is essentially 1.0 everywhere (sanity check).
-fn sparsity_map(
-    coeffs: &ndarray::Array4<f32>,
-    mask: &ndarray::Array3<bool>,
-) -> ndarray::Array3<f32> {
-    let s = coeffs.shape();
-    let (nx, ny, nz, nk) = (s[0], s[1], s[2], s[3]);
-    let denom = nk as f32;
-    let mut out = ndarray::Array3::<f32>::zeros((nx, ny, nz));
-    for x in 0..nx {
-        for y in 0..ny {
-            for z in 0..nz {
-                if !mask[(x, y, z)] {
-                    continue;
-                }
-                let mut nnz = 0u32;
-                for k in 0..nk {
-                    if coeffs[(x, y, z, k)] != 0.0 {
-                        nnz += 1;
-                    }
-                }
-                out[(x, y, z)] = nnz as f32 / denom;
-            }
+impl From<AlphaMode> for cs_dmri::fit::AlphaMode {
+    fn from(m: AlphaMode) -> Self {
+        match m {
+            AlphaMode::Fixed => Self::Fixed,
+            AlphaMode::AlphaRatio => Self::AlphaRatio,
+            AlphaMode::PathBic => Self::PathBic,
+            AlphaMode::L2Anchored => Self::L2Anchored,
         }
     }
-    out
-}
-
-/// RMSE = ‖Mc − s‖₂ / √n_grads, derived from the per-voxel residual L2 norm.
-fn rmse_from_residual_l2(
-    residual_l2: &ndarray::Array3<f32>,
-    n_grads: usize,
-) -> ndarray::Array3<f32> {
-    let denom = (n_grads as f32).sqrt();
-    residual_l2.mapv(|r| r / denom)
-}
-
-fn build_alpha_strategy(args: &Cli) -> Result<AlphaStrategy> {
-    Ok(match args.alpha_mode {
-        AlphaMode::Fixed => AlphaStrategy::Fixed { alpha: args.alpha },
-        AlphaMode::AlphaRatio => {
-            if !(args.alpha_ratio > 0.0 && args.alpha_ratio < 1.0) {
-                bail!("--alpha-ratio must lie in (0, 1), got {}", args.alpha_ratio);
-            }
-            AlphaStrategy::AlphaMaxRatio { ratio: args.alpha_ratio }
-        }
-        AlphaMode::PathBic => {
-            if args.path_n_alphas < 2 {
-                bail!("--path-n-alphas must be ≥ 2, got {}", args.path_n_alphas);
-            }
-            // Mode-dependent default: path-bic stays at 1e-3 for backward
-            // compatibility.
-            let eps = args.path_eps.unwrap_or(1e-3);
-            if !(eps > 0.0 && eps < 1.0) {
-                bail!("--path-eps must lie in (0, 1), got {}", eps);
-            }
-            AlphaStrategy::PathBic {
-                path: AlphaPath { n: args.path_n_alphas, eps },
-            }
-        }
-        AlphaMode::L2Anchored => {
-            if args.path_n_alphas < 2 {
-                bail!("--path-n-alphas must be ≥ 2, got {}", args.path_n_alphas);
-            }
-            // Mode-dependent default: l2-anchored uses 1e-4 so the slack
-            // constraint binds on the full path. With eps=1e-3 (path-bic
-            // default) high-b regimes fall back ~17% of voxels.
-            let eps = args.path_eps.unwrap_or(1e-4);
-            if !(eps > 0.0 && eps < 1.0) {
-                bail!("--path-eps must lie in (0, 1), got {}", eps);
-            }
-            if args.slack < 0.0 {
-                bail!("--slack must be ≥ 0, got {}", args.slack);
-            }
-            AlphaStrategy::PathL2Anchored {
-                path: AlphaPath { n: args.path_n_alphas, eps },
-                slack: args.slack,
-            }
-        }
-    })
 }
 
 /// Pre-flight: validate every output path cs-fit will eventually write before
@@ -714,17 +547,3 @@ fn precheck_outputs(args: &mut Cli) -> Result<()> {
 
     Ok(())
 }
-
-fn mean_in_mask(arr: &ndarray::Array3<f32>, mask: &ndarray::Array3<bool>) -> f64 {
-    let mut sum = 0.0_f64;
-    let mut count = 0_usize;
-    for ((idx, &v), &m) in arr.indexed_iter().zip(mask.iter()) {
-        let _ = idx;
-        if m {
-            sum += v as f64;
-            count += 1;
-        }
-    }
-    if count == 0 { 0.0 } else { sum / count as f64 }
-}
-

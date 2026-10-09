@@ -6,6 +6,9 @@
 //! supports the reverse pass: synthesize a new 4D DWI from coefficients and a
 //! new gradient table.
 
+// The allocator is a process-wide choice, so it is opt-out: the Python
+// extension builds without it and leaves allocation to the host interpreter.
+#[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

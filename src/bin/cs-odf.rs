@@ -17,18 +17,15 @@ use cs_dmri::basis::BasisMetadata;
 use cs_dmri::io::coeffs::CoefficientsFile;
 use cs_dmri::io::microstructure::{
     MicrostructureOptions, MicrostructureOutlierRejection, MicrostructureUnits,
-    compute_microstructure, embed_microstructure_dpvs, write_microstructure_nifti_siblings,
+    write_microstructure_nifti_siblings,
 };
 use cs_dmri::io::odx_out::{
-    ShoreOdxOptions, ShoreOdxPeakOpts, auto_mask_from_coeffs, build_shore_odx,
-    canonicalize_array3_f32, canonicalize_array4, canonicalize_bool_mask,
-    finalize_and_write_odx, SHORE_ODX_DEFAULT_NPEAKS, SHORE_ODX_DEFAULT_REL_THRESH,
+    ShoreOdxOptions, ShoreOdxPeakOpts, ShoreToOdxOptions, finalize_and_write_odx,
+    shore_coeffs_to_odx, SHORE_ODX_DEFAULT_NPEAKS, SHORE_ODX_DEFAULT_REL_THRESH,
     SHORE_ODX_DEFAULT_MIN_SEP_DEG,
 };
-use cs_dmri::odf::default_lmax;
 use cs_dmri::{ProvenanceBuilder, ProvenanceMode, effective_thread_count};
 
-use odx_rs::CanonTransform;
 use odx_rs::mrtrix_sh::ANISOTROPIC_POWER_NORM_FACTOR;
 use odx_rs::reference_affine::read_reference_affine;
 
@@ -199,49 +196,22 @@ fn main() -> Result<()> {
     let raw_coeffs = coeffs_file.coeffs;
     let meta = &coeffs_file.metadata;
 
-    // Canonicalize spatial axes to RAS+ so the on-disk ODX matches what
-    // `odx convert` produces from the same NIfTI. Otherwise downstream
-    // comparators that load ODXs with their original affine would see
-    // mismatched voxel orderings between cs-odf and odx-converted gold.
+    // `shore_coeffs_to_odx` canonicalizes everything to RAS+ so the on-disk
+    // ODX matches what `odx convert` produces from the same NIfTI.
     let raw_affine = read_reference_affine(&args.coeffs)
         .map_err(|e| anyhow!("failed to read affine from {:?}: {e}", args.coeffs))?;
-    let canon = CanonTransform::from_affine(raw_affine);
-    let (coeffs, affine) = canonicalize_array4(&raw_coeffs, raw_affine, &canon)?;
-
     let (radial_order, zeta) = match meta.basis {
         BasisMetadata::Shore { radial_order, zeta } => (radial_order, zeta),
     };
-    let lmax = args.lmax.unwrap_or_else(|| default_lmax(radial_order));
-    if lmax % 2 != 0 {
-        bail!("lmax must be even, got {lmax}");
-    }
-    if lmax > radial_order {
-        bail!(
-            "lmax {lmax} exceeds radial_order {radial_order}; the SHORE basis has no ℓ > radial_order blocks"
-        );
-    }
-
     let basis = ShoreBasis::new(radial_order, zeta);
-    let mask = match args.mask.as_deref() {
-        Some(path) => {
-            let raw_mask = read_mask_nifti(path)?;
-            let canon_mask = canonicalize_bool_mask(&raw_mask, raw_affine, &canon)?;
-            let spatial = [coeffs.shape()[0], coeffs.shape()[1], coeffs.shape()[2]];
-            if canon_mask.shape() != spatial {
-                bail!(
-                    "mask canonical shape {:?} does not match coefficient spatial shape {:?}",
-                    canon_mask.shape(),
-                    spatial
-                );
-            }
-            canon_mask
-        }
-        None => auto_mask_from_coeffs(&coeffs),
-    };
+    let raw_mask = args
+        .mask
+        .as_deref()
+        .map(read_mask_nifti)
+        .transpose()?;
 
-    // Pre-load + canonicalize diagnostic siblings the user wants captured as
-    // DPVs (R², RMSE, α, BIC, sparsity). Held in `loaded` so the &refs we
-    // pass to `build_shore_odx` outlive the call.
+    // Diagnostic siblings the user wants captured as DPVs (R², RMSE, α, BIC,
+    // sparsity).
     let loaded: Vec<(&'static str, Array3<f32>)> = if args.no_diagnostic_dpvs {
         Vec::new()
     } else {
@@ -257,46 +227,19 @@ fn main() -> Result<()> {
             if !p.exists() {
                 continue;
             }
-            let raw = read_3d_f32_nifti(&p)?;
-            let canon_arr = canonicalize_array3_f32(&raw, raw_affine, &canon)?;
             if !args.quiet {
                 eprintln!("[cs-odf] added DPV '{name}' from {}", p.display());
             }
-            out.push((name, canon_arr));
+            out.push((name, read_3d_f32_nifti(&p)?));
         }
         out
     };
     let diagnostic_dpvs: Vec<(&str, &Array3<f32>)> =
         loaded.iter().map(|(n, a)| (*n, a)).collect();
 
-    let opts = ShoreOdxOptions {
-        field_name: args.name.clone(),
-        global_normalize: !args.no_global_normalize,
-        anisotropic_power: !args.no_anisotropic_power,
-        ap_norm_factor: args.ap_norm_factor,
-        peaks: if args.no_peaks {
-            None
-        } else {
-            Some(ShoreOdxPeakOpts {
-                npeaks: args.peak_npeaks,
-                relative_threshold: args.peak_relative_threshold,
-                min_separation_deg: args.peak_min_separation_deg,
-            })
-        },
-        progress_interval_secs: args.progress_interval_secs,
-        quiet: args.quiet,
-    };
-    let mut built = build_shore_odx(
-        &coeffs,
-        affine,
-        &mask,
-        &basis,
-        lmax,
-        &diagnostic_dpvs,
-        &opts,
-    )?;
-
-    if !args.no_microstructure {
+    let microstructure = if args.no_microstructure {
+        None
+    } else {
         if args.no_peaks && !args.quiet {
             eprintln!(
                 "[cs-odf] --no-peaks: RTAP/RTPP per voxel will be NaN \
@@ -322,32 +265,54 @@ fn main() -> Result<()> {
                 p99_factor: args.microstructure_outlier_factor,
             })
         };
-        let mopts = MicrostructureOptions {
+        Some(MicrostructureOptions {
             units,
             outlier_rejection,
             quiet: args.quiet,
-        };
-        let scalars = compute_microstructure(
-            &basis,
-            &coeffs,
-            &built.masked_indices,
-            built.peak0_dirs.as_deref(),
-            &mopts,
-        );
-        embed_microstructure_dpvs(&mut built.builder, &scalars);
+        })
+    };
 
-        if args.microstructure_nifti {
-            let spatial = [coeffs.shape()[0], coeffs.shape()[1], coeffs.shape()[2]];
-            write_microstructure_nifti_siblings(
-                &args.output,
-                &affine,
-                spatial,
-                &built.masked_indices,
-                &scalars,
-                args.overwrite,
-                args.quiet,
-            )?;
-        }
+    let opts = ShoreToOdxOptions {
+        lmax: args.lmax,
+        odx: ShoreOdxOptions {
+            field_name: args.name.clone(),
+            global_normalize: !args.no_global_normalize,
+            anisotropic_power: !args.no_anisotropic_power,
+            ap_norm_factor: args.ap_norm_factor,
+            peaks: if args.no_peaks {
+                None
+            } else {
+                Some(ShoreOdxPeakOpts {
+                    npeaks: args.peak_npeaks,
+                    relative_threshold: args.peak_relative_threshold,
+                    min_separation_deg: args.peak_min_separation_deg,
+                })
+            },
+            progress_interval_secs: args.progress_interval_secs,
+            quiet: args.quiet,
+        },
+        microstructure,
+    };
+    let out = shore_coeffs_to_odx(
+        &raw_coeffs,
+        raw_affine,
+        raw_mask.as_ref(),
+        &basis,
+        &diagnostic_dpvs,
+        &opts,
+    )?;
+    let mut built = out.build;
+
+    if let (Some(scalars), true) = (out.microstructure.as_ref(), args.microstructure_nifti) {
+        write_microstructure_nifti_siblings(
+            &args.output,
+            &out.affine,
+            out.spatial,
+            &built.masked_indices,
+            scalars,
+            args.overwrite,
+            args.quiet,
+        )?;
     }
 
     if let Some(builder_p) = provenance_builder {

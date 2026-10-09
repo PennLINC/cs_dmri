@@ -1132,6 +1132,103 @@ pub fn auto_mask_from_coeffs(coeffs: &Array4<f32>) -> Array3<bool> {
     })
 }
 
+/// Options for [`shore_coeffs_to_odx`].
+#[derive(Debug, Clone)]
+pub struct ShoreToOdxOptions {
+    /// ODF SH order; `None` = largest even ≤ radial order.
+    pub lmax: Option<u32>,
+    pub odx: ShoreOdxOptions,
+    /// Also embed RTOP/RTAP/RTPP/MSD/QIV/NG DPVs; `None` skips them.
+    pub microstructure: Option<crate::io::microstructure::MicrostructureOptions>,
+}
+
+/// Output of [`shore_coeffs_to_odx`]: an unfinalized builder (so the caller
+/// can attach provenance) plus what the caller needs to write siblings.
+pub struct ShoreToOdx {
+    pub build: ShoreOdxBuild,
+    /// Canonical (RAS+) affine and spatial shape the ODX was built on.
+    pub affine: [[f64; 4]; 4],
+    pub spatial: [usize; 3],
+    pub microstructure: Option<crate::io::microstructure::MicrostructureScalars>,
+}
+
+/// SHORE coefficients on their acquisition grid → canonical RAS+ ODX builder.
+///
+/// Canonicalizes coefficients, mask and per-voxel diagnostic DPVs with
+/// `raw_affine`; uses `raw_mask` if given (it must match the coefficient grid)
+/// and otherwise every voxel with a nonzero coefficient; validates `lmax`; then
+/// runs [`build_shore_odx`] and, if requested, embeds microstructure DPVs. The
+/// shared tail of `cs-fit --odx-output` and `cs-odf`.
+pub fn shore_coeffs_to_odx(
+    raw_coeffs: &Array4<f32>,
+    raw_affine: [[f64; 4]; 4],
+    raw_mask: Option<&Array3<bool>>,
+    basis: &ShoreBasis,
+    raw_diag_dpvs: &[(&str, &Array3<f32>)],
+    opts: &ShoreToOdxOptions,
+) -> Result<ShoreToOdx> {
+    use crate::io::microstructure::{compute_microstructure, embed_microstructure_dpvs};
+
+    let canon = CanonTransform::from_affine(raw_affine);
+    let (coeffs, affine) = canonicalize_array4(raw_coeffs, raw_affine, &canon)?;
+    let spatial = [coeffs.shape()[0], coeffs.shape()[1], coeffs.shape()[2]];
+
+    let radial_order = basis.radial_order;
+    let lmax = opts
+        .lmax
+        .unwrap_or_else(|| crate::odf::default_lmax(basis.radial_order));
+    if lmax % 2 != 0 {
+        return Err(anyhow!("lmax must be even, got {lmax}"));
+    }
+    if lmax > radial_order {
+        return Err(anyhow!(
+            "lmax {lmax} exceeds radial_order {radial_order}; the SHORE basis has no ℓ > radial_order blocks"
+        ));
+    }
+
+    let mask = match raw_mask {
+        Some(m) => {
+            let canon_mask = canonicalize_bool_mask(m, raw_affine, &canon)?;
+            if canon_mask.shape() != spatial {
+                return Err(anyhow!(
+                    "mask canonical shape {:?} does not match coefficient spatial shape {:?}",
+                    canon_mask.shape(),
+                    spatial
+                ));
+            }
+            canon_mask
+        }
+        None => auto_mask_from_coeffs(&coeffs),
+    };
+
+    let canon_dpvs: Vec<(&str, Array3<f32>)> = raw_diag_dpvs
+        .iter()
+        .map(|(name, arr)| Ok((*name, canonicalize_array3_f32(arr, raw_affine, &canon)?)))
+        .collect::<Result<_>>()?;
+    let dpv_refs: Vec<(&str, &Array3<f32>)> = canon_dpvs.iter().map(|(n, a)| (*n, a)).collect();
+
+    let mut build = build_shore_odx(&coeffs, affine, &mask, basis, lmax, &dpv_refs, &opts.odx)?;
+
+    let microstructure = opts.microstructure.as_ref().map(|mopts| {
+        let scalars = compute_microstructure(
+            basis,
+            &coeffs,
+            &build.masked_indices,
+            build.peak0_dirs.as_deref(),
+            mopts,
+        );
+        embed_microstructure_dpvs(&mut build.builder, &scalars);
+        scalars
+    });
+
+    Ok(ShoreToOdx {
+        build,
+        affine,
+        spatial,
+        microstructure,
+    })
+}
+
 /// Reorient a 4-D float volume to canonical RAS+ alongside its affine.
 pub fn canonicalize_array4(
     raw: &Array4<f32>,
