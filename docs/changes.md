@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.2.0
 
 - 3D-SHORE fitting stops with an error on data with a single non-zero b-value
   shell, whose radial decay it cannot determine. `allow_single_shell` /
