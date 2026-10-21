@@ -52,4 +52,5 @@ templates_path = []
 exclude_patterns = ["_build", "tools"]
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
+html_css_files = ["custom.css"]
 html_title = f"cs_dmri {release}"

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Continuous-b multi-tissue CSD (CONSH) for non-shelled and multi-shell data:
+- Continuous-b multi-tissue CSD (ConSH) for non-shelled and multi-shell data:
   dense-b response estimation with three row estimators (Gaussian-in-b kernel,
   constrained smooth fit, and the parametric response of Morez et al., 2021),
   joint deconvolution with an optional noise-floor compartment, per-voxel

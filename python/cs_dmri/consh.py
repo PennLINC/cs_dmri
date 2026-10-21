@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
-"""Continuous-b multi-tissue CSD (CONSH) for non-shelled q-space.
+"""Continuous-b multi-tissue CSD (ConSH) for non-shelled q-space.
 
-CONSH fits a white-matter fODF and gray-matter and CSF compartments to
+ConSH fits a white-matter fODF and gray-matter and CSF compartments to
 diffusion data whose b-values do not form shells, against tissue responses
 defined on a dense grid of b-values (row ``k`` is the response at
 ``b = k * step``). On shelled data it reduces to MSMT-CSD.
@@ -130,7 +130,7 @@ def _graddev_array(graddev, shape, affine):
 
 
 def _series(data, mask, gtab, affine, bvec_frame):
-    """Volume, mask, affine, fit frame and rotation for the CONSH bindings."""
+    """Volume, mask, affine, fit frame and rotation for the ConSH bindings."""
     vol, m, dwi_affine, dwi = resolve(data, mask, gtab)
     affine = dwi_affine if affine is None else np.asarray(affine, dtype=np.float64)
     frame, R = fit_frame(bvec_frame, affine)
@@ -230,7 +230,7 @@ class ConshModel:
 
 @dataclass(frozen=True)
 class ConshFit:
-    """Tissue maps from CONSH: ``wm`` (X, Y, Z, n_sh) Tournier SH, ``gm``,
+    """Tissue maps from ConSH: ``wm`` (X, Y, Z, n_sh) Tournier SH, ``gm``,
     ``csf`` and ``noise_floor`` (X, Y, Z; ``noise_floor`` is ``None`` when not
     fitted). ``normalization`` holds mtnormalise's diagnostics once applied;
     ``reference_b0`` is the median b=0 in white matter and where it came from,
@@ -339,7 +339,7 @@ def consh_pipeline(dwi, *, responses: DenseBResponses | None = None, graddev=Non
                    mtnorm_balanced: bool = False, wm_ridge: float = 0.0, wm_ridge_anchor: float = 0.0,
                    wm_ridge_relative: bool = False, icls_max_iter: int = 2000, reference_mask=None,
                    diagnostics: bool = False, n_threads: int | None = None, **response_options) -> ConshFit:
-    """Dense-b responses (estimated from ``dwi`` unless given) → CONSH →
+    """Dense-b responses (estimated from ``dwi`` unless given) → ConSH →
     mtnormalise: the ``consh`` pipeline in one call, with identical results.
 
     ``response_options`` go to the tissue selection and tensor fit (see

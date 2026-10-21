@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Whole-volume ground-truth test of continuous-b multi-tissue CSD (CONSH).
+//! Whole-volume ground-truth test of continuous-b multi-tissue CSD (ConSH).
 //!
 //! A small synthetic brain is sampled on a Cartesian (DSI-like) q-space grid,
 //! which has 14 distinct b-values and no shells. It runs through the same steps

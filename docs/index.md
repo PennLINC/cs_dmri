@@ -1,8 +1,12 @@
 # cs_dmri
 
 cs_dmri is a library and set of command-line tools for the analysis of
-diffusion MRI data. It is written in Rust and has a Python interface. It
-provides:
+diffusion MRI data. It is written in Rust and has a Python interface.
+
+The name stands for compressed-sensing diffusion MRI. The tools were developed
+for compressed-sensing diffusion spectrum imaging (CS-DSI), which samples
+q-space sparsely and without shells, and they apply equally to other
+undersampled acquisitions, such as single-shell data. cs_dmri provides:
 
 - **Image quality control**: neighboring DWI correlation, a DWI contrast ratio,
   within-volume outlier-slice detection and a fixel-coherence index.
@@ -14,7 +18,7 @@ provides:
 - **Single-shell three-tissue constrained spherical deconvolution** (SS3T-CSD),
   including unsupervised response-function estimation and multi-tissue
   intensity normalization.
-- **Continuous-b multi-tissue CSD** (CONSH) for non-shelled acquisitions such as
+- **Continuous-b multi-tissue CSD** (ConSH) for non-shelled acquisitions such as
   Cartesian and compressed-sensing DSI, with response functions defined
   continuously in b and optional per-voxel gradient-nonlinearity correction.
 

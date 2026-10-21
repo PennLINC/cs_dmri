@@ -1,6 +1,6 @@
 # Exporting results
 
-Orientation results, the SHORE ODFs and the SS3T and CONSH white-matter FODs,
+Orientation results, the SHORE ODFs and the SS3T and ConSH white-matter FODs,
 are stored natively in the [ODX](https://github.com/PennLINC/odx-rs) format. From Python
 they can also be written for DSI Studio, dipy and MRtrix3, using the format
 converters of odx-rs.

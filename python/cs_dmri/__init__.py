@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 """cs_dmri: diffusion MRI quality control, SHORE compressed-sensing fits,
 RESTORE tensors, single-shell three-tissue CSD and continuous-b multi-tissue
-CSD (CONSH), implemented in Rust.
+CSD (ConSH), implemented in Rust.
 
 >>> import cs_dmri as cs
 >>> dwi = cs.DWI.from_files("dwi.nii.gz", "dwi.bval", "dwi.bvec", mask="mask.nii.gz")

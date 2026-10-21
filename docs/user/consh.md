@@ -1,4 +1,4 @@
-# Continuous-b multi-tissue CSD (CONSH)
+# Continuous-b multi-tissue CSD (ConSH)
 
 Multi-shell multi-tissue constrained spherical deconvolution (MSMT-CSD;
 Jeurissen et al., 2014) estimates a white-matter fiber orientation distribution
@@ -8,7 +8,7 @@ sample q-space on shells, such as Cartesian (DSI-like) and compressed-sensing
 DSI schemes, have many distinct b-values with few directions each, and rounding
 them into shells discards information.
 
-CONSH (continuous-b spherical harmonic deconvolution) removes the need for
+ConSH (continuous-b spherical harmonic deconvolution) removes the need for
 shells. The tissue responses are defined on a dense grid of b-values
 (`0, step, 2·step, …`), each measurement is modeled with the response at its
 own b-value, and all tissues are fit jointly in every voxel. On a shelled
@@ -35,7 +35,7 @@ consh --dwi dwi.nii.gz --bval dwi.bval --bvec dwi.bvec --mask mask.nii.gz \
 Separating three tissues requires diffusion data at three or more distinct
 b-values, b=0 included, as MRtrix3's `msmt_csd` requires at least as many shells
 as tissues. b-values within 50 s/mm² of each other count as one. Data with b=0
-and a single b-value cannot separate three tissues, and CONSH stops with an
+and a single b-value cannot separate three tissues, and ConSH stops with an
 error; such data are analyzed with {doc}`single-shell three-tissue CSD
 <multitissue>`.
 
@@ -131,7 +131,7 @@ Python, fits can also be exported to DSI Studio, dipy and MRtrix3 formats (see
 Fiber density (the apparent fiber density of Raffelt et al., 2012) is
 comparable across subjects only when the fODF amplitude is proportional to the
 signal and the same response functions are used for every subject (Dhollander,
-Clemente et al., 2021; Smith et al., 2022). By default CONSH fits each voxel's
+Clemente et al., 2021; Smith et al., 2022). By default ConSH fits each voxel's
 signal divided by its own b=0 signal, which makes fiber density a fraction of
 the voxel's signal. With `quantitative=True` (`--quantitative`) the fitted
 coefficients are multiplied back by the voxel's b=0 signal. This is equivalent
@@ -168,7 +168,7 @@ own, which compensates differences in b=0 contrast between scans, and the
 rescaled responses are then averaged (or their median taken). The deviation of
 each scan from the pool is reported; a scan far from the others usually has a
 poor single-fiber selection. All scans must share the grid step, the maximum
-b-value and the white-matter SH order. Because CONSH uses every b-value, fiber
+b-value and the white-matter SH order. Because ConSH uses every b-value, fiber
 densities from acquisitions with different maximum b-values are not on the same
 scale even with the same response, so a study should use one protocol.
 

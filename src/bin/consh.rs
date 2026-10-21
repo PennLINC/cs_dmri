@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! `consh`: continuous-b spherical harmonic deconvolution (CONSH).
+//! `consh`: continuous-b spherical harmonic deconvolution (ConSH).
 //!
 //! Whole-brain continuous-b multi-tissue CSD.
 //!
@@ -10,7 +10,7 @@
 //! drives one joint multi-tissue constrained least-squares fit per voxel. On a
 //! shelled acquisition it reduces exactly to standard MSMT-CSD.
 //!
-//! Stages: DTI (RESTORE) → dense-b response estimation → per-voxel CONSH fit →
+//! Stages: DTI (RESTORE) → dense-b response estimation → per-voxel ConSH fit →
 //! mtnormalise. Outputs the WM fODF (SH) and GM/CSF NIfTIs, or one ODX.
 
 use std::path::PathBuf;
@@ -50,7 +50,7 @@ use cs_dmri::{
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "Continuous-b multi-tissue CSD (CONSH) for non-shelled diffusion MRI"
+    about = "Continuous-b multi-tissue CSD (ConSH) for non-shelled diffusion MRI"
 )]
 struct Cli {
     /// 4D DWI NIfTI input (non-shelled CS-DSI or any multi-b scheme).

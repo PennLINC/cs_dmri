@@ -86,7 +86,7 @@ def test_shore_l2_matches_cs_fit(pnc, tmp_path):
     np.testing.assert_array_equal(fit.r2[pnc.mask], load(tmp_path / "coef_r2.nii.gz")[pnc.mask])
 
 
-# CONSH needs three or more distinct b-values, so it is checked on a
+# ConSH needs three or more distinct b-values, so it is checked on a
 # multi-shell series instead of the single-shell PNC one.
 MULTISHELL = REPO.parent / "qsiprep_testing/data/multishell_output/qsiprep/sub-ABCD/dwi/sub-ABCD_acq-10per000_space-T1w_desc-"
 

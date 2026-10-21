@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! End-to-end continuous-b multi-tissue CSD (CONSH): dense-b responses
+//! End-to-end continuous-b multi-tissue CSD (ConSH): dense-b responses
 //! (estimated or given) → per-voxel fit → optional mtnormalise. The `consh`
 //! tool and the Python `consh_pipeline` both run this.
 
@@ -138,7 +138,7 @@ pub fn estimate_dense_b_responses(
     Ok(DenseBEstimate { responses, estimator: rcfg.estimator, diagnostics, dti, grid_bmax })
 }
 
-/// Distinct b-values, b=0 included, CONSH needs: as for MRtrix3's
+/// Distinct b-values, b=0 included, ConSH needs: as for MRtrix3's
 /// `msmt_csd`, at least as many as the tissues it separates (WM, GM, CSF).
 pub const MIN_CONSH_B_VALUES: usize = 3;
 
@@ -151,7 +151,7 @@ pub fn check_consh_sampling(dwi: &DwiData) -> Result<()> {
     if n < MIN_CONSH_B_VALUES {
         let listed: Vec<String> = shells.iter().map(|b| format!("{b:.0}")).collect();
         return Err(CsDmriError::Other(format!(
-            "CONSH separates three tissues, which needs diffusion data at {MIN_CONSH_B_VALUES} or \
+            "ConSH separates three tissues, which needs diffusion data at {MIN_CONSH_B_VALUES} or \
              more distinct b-values including b=0 (as MRtrix's msmt_csd needs as many shells as \
              tissues); this series has {n} ({}b = {}). For single-shell data use single-shell \
              three-tissue CSD (cs-ss3t-full, cs_dmri.ss3t_pipeline).",
@@ -162,7 +162,7 @@ pub fn check_consh_sampling(dwi: &DwiData) -> Result<()> {
     Ok(())
 }
 
-/// Run responses → CONSH → mtnormalise on `dwi`, with per-voxel gradient
+/// Run responses → ConSH → mtnormalise on `dwi`, with per-voxel gradient
 /// tables from `graddev` when given.
 pub fn consh_pipeline(
     dwi: &DwiData,

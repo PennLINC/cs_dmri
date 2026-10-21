@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Continuous-b multi-tissue CSD (CONSH) bindings.
+//! Continuous-b multi-tissue CSD (ConSH) bindings.
 
 use std::path::PathBuf;
 
@@ -261,7 +261,7 @@ fn rotation3(rotation: &PyReadonlyArray2<f64>) -> PyResult<[[f64; 3]; 3]> {
     Ok(std::array::from_fn(|i| std::array::from_fn(|j| r[(i, j)])))
 }
 
-/// Responses → CONSH fit → mtnormalise (`consh`). With `responses` given they
+/// Responses → ConSH fit → mtnormalise (`consh`). With `responses` given they
 /// are used as-is; otherwise they are estimated from the series.
 #[pyfunction]
 #[pyo3(signature = (data, bvals, bvecs, mask, rotation, *, world=true, affine=None, b0_threshold=50.0,
@@ -404,7 +404,7 @@ pub fn consh_run<'py>(
     Ok(d)
 }
 
-/// Pool per-scan CONSH responses into one group response (`consh-response mean`).
+/// Pool per-scan ConSH responses into one group response (`consh-response mean`).
 #[pyfunction]
 #[pyo3(signature = (inputs, *, statistic="mean", legacy=false))]
 pub fn consh_pool_responses<'py>(
@@ -430,7 +430,7 @@ pub fn consh_pool_responses<'py>(
     Ok(d)
 }
 
-/// Write a CONSH fit in any supported format (`consh --odx`, plus the other
+/// Write a ConSH fit in any supported format (`consh --odx`, plus the other
 /// formats of `odx convert`).
 #[pyfunction]
 #[pyo3(signature = (path, affine, mask, wm, gm, csf, lmax_wm, wm_response, gm_response, csf_response, step,

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! `consh-response`: utilities for CONSH dense-b response functions.
+//! `consh-response`: utilities for ConSH dense-b response functions.
 //!
 //! One subcommand, `mean`, pools per-scan responses into the common response
 //! a quantitative study needs.
 //!
-//! This is the CONSH analogue of mrtrix3's `responsemean`. The motivation is
+//! This is the ConSH analogue of mrtrix3's `responsemean`. The motivation is
 //! the same: fixel-based analysis and AFD quantification require that "one unit
 //! of AFD" mean the same thing in every subject, which in turn requires a single
 //! response shared across the study (Raffelt et al. 2012; Dhollander et al.
-//! 2021; Smith et al. 2022). The difference is the format — a CONSH response is
+//! 2021; Smith et al. 2022). The difference is the format — a ConSH response is
 //! a *dense-b* matrix with one zonal-SH row per b-grid point, rather than one
 //! row per acquired shell — so `responsemean` cannot read it.
 //!
@@ -24,7 +24,7 @@
 //! MRtrix's raw units, coil loading and receiver gain) are baked in, and
 //! without rescaling the highest-magnitude inputs would dominate the mean.
 //!
-//! CONSH responses carry that same per-scan magnitude, minus the gain: every
+//! ConSH responses carry that same per-scan magnitude, minus the gain: every
 //! tissue is divided by one common per-scan reference (the single-fiber-WM
 //! median b=0) at estimation, which preserves the relative amplitudes between
 //! tissues and leaves each scan's PD·T2 contrast and mean/median anchor ratio
@@ -67,7 +67,7 @@ use cs_dmri::multitissue::response_pool::{
 const TISSUES: [&str; 3] = ["wm", "gm", "csf"];
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Utilities for CONSH dense-b response functions")]
+#[command(version, about = "Utilities for ConSH dense-b response functions")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

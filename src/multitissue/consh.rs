@@ -209,7 +209,7 @@ pub struct ConshConfig {
     /// component is the bias field and whose per-voxel residual is the AFD
     /// contrast.
     ///
-    /// See the "Quantitative use" section of the CONSH user guide.
+    /// See the "Quantitative use" section of the ConSH user guide.
     pub quantitative: bool,
     /// Interpolate the response linearly in b between the two bracketing grid
     /// rows, instead of snapping each measurement to its nearest row (±step/2).

@@ -1,9 +1,9 @@
 # consh-response
 
-Pools per-scan CONSH responses into one group response. See {doc}`../user/consh`.
+Pools per-scan ConSH responses into one group response. See {doc}`../user/consh`.
 
 ```text
-Utilities for CONSH dense-b response functions
+Utilities for ConSH dense-b response functions
 
 Usage: consh-response <COMMAND>
 

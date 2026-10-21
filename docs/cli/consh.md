@@ -1,9 +1,9 @@
 # consh
 
-Continuous-b multi-tissue CSD (CONSH): dense-b response estimation, deconvolution and intensity normalization for non-shelled or multi-shell data. See {doc}`../user/consh`.
+Continuous-b multi-tissue CSD (ConSH): dense-b response estimation, deconvolution and intensity normalization for non-shelled or multi-shell data. See {doc}`../user/consh`.
 
 ```text
-Continuous-b multi-tissue CSD (CONSH) for non-shelled diffusion MRI
+Continuous-b multi-tissue CSD (ConSH) for non-shelled diffusion MRI
 
 Usage: consh [OPTIONS] --dwi <DWI>
 

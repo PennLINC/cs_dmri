@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Pooling of per-scan dense-b responses into one group response.
 //!
-//! The analogue of MRtrix3's `responsemean` for CONSH responses, which have
+//! The analogue of MRtrix3's `responsemean` for ConSH responses, which have
 //! one zonal-SH row per dense-b grid point rather than one per shell. As in
 //! `responsemean`'s default, each input is first rescaled by a magnitude
 //! multiplier, the geometric mean over rows of `(group mean l=0) / (input
@@ -42,7 +42,7 @@ pub struct PooledTissue {
     pub deviation_pct: Vec<f64>,
 }
 
-/// Pool per-scan CONSH responses (two or more, on the same dense-b grid and
+/// Pool per-scan ConSH responses (two or more, on the same dense-b grid and
 /// with the same WM order) into one group response.
 pub fn pool_responses(
     inputs: &[ConshResponses],
@@ -98,7 +98,7 @@ pub fn check_poolable(responses: &[TissueResponse]) -> std::result::Result<(), S
     }
     // b=0 magnitudes differ between scans (that is what the multiplier
     // compensates), but a zero or negative b=0 term means the input did not
-    // come from CONSH response estimation.
+    // come from ConSH response estimation.
     if responses
         .iter()
         .any(|r| r.coeffs.first().and_then(|row| row.first()).copied().unwrap_or(0.0) <= 0.0)

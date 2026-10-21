@@ -27,9 +27,9 @@ TOOLS = {
     "cs-mtnorm": "Multi-tissue intensity normalization of tissue maps. See {doc}`../user/multitissue`.",
     "cs-ss3t-full": "Response estimation, SS3T-CSD and intensity normalization in one step. "
                     "See {doc}`../user/multitissue`.",
-    "consh": "Continuous-b multi-tissue CSD (CONSH): dense-b response estimation, deconvolution and "
+    "consh": "Continuous-b multi-tissue CSD (ConSH): dense-b response estimation, deconvolution and "
              "intensity normalization for non-shelled or multi-shell data. See {doc}`../user/consh`.",
-    "consh-response": "Pools per-scan CONSH responses into one group response. See {doc}`../user/consh`.",
+    "consh-response": "Pools per-scan ConSH responses into one group response. See {doc}`../user/consh`.",
 }
 
 
