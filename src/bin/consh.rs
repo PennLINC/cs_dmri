@@ -237,7 +237,7 @@ struct Cli {
     /// scale. The WM fODF amplitude is then proportional to the signal (and so
     /// to intra-cellular volume at high b), which apparent fiber density and
     /// SIFT2 require and per-voxel S/S0 normalization removes (Smith et al.
-    /// 2022; Dhollander et al. 2021).
+    /// 2022; Dhollander, Clemente et al. 2021).
     ///
     /// The responses are scaled by one per-scan reference (the median b=0 of
     /// the single-fiber WM voxels), which keeps the relative amplitudes of the

@@ -3,7 +3,7 @@
 Multi-tissue intensity normalization of tissue maps. See {doc}`../user/multitissue`.
 
 ```text
-Multi-tissue intensity normalization and bias field correction in the log domain (Raffelt et al., 2017; Dhollander et al., 2021)
+Multi-tissue intensity normalization and bias field correction in the log domain (Raffelt et al., 2017; Dhollander, Tabbara et al., 2021)
 
 Usage: cs-mtnorm [OPTIONS] --in-wm <IN_WM> --in-gm <IN_GM> --in-csf <IN_CSF> --mask <MASK> --out-wm <OUT_WM> --out-gm <OUT_GM> --out-csf <OUT_CSF>
 

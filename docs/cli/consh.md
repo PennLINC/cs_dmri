@@ -120,7 +120,7 @@ Options:
           If omitted, the reference is taken from the Dhollander single-fiber WM voxels when responses are estimated, or from voxels where the fitted WM compartment dominates when they are read from disk.
 
       --quantitative
-          Write fODFs in absolute signal units, multiplying each voxel's fitted coefficients by its b=0 signal, instead of the default per-voxel S/S0 scale. The WM fODF amplitude is then proportional to the signal (and so to intra-cellular volume at high b), which apparent fiber density and SIFT2 require and per-voxel S/S0 normalization removes (Smith et al. 2022; Dhollander et al. 2021).
+          Write fODFs in absolute signal units, multiplying each voxel's fitted coefficients by its b=0 signal, instead of the default per-voxel S/S0 scale. The WM fODF amplitude is then proportional to the signal (and so to intra-cellular volume at high b), which apparent fiber density and SIFT2 require and per-voxel S/S0 normalization removes (Smith et al. 2022; Dhollander, Clemente et al. 2021).
           
           The responses are scaled by one per-scan reference (the median b=0 of the single-fiber WM voxels), which keeps the relative amplitudes of the tissues as MRtrix's `amp2response` does. A common scale across subjects comes from a shared group-average response (`consh-response mean`, read with --read-responses-from), as in MRtrix; the remaining per-subject scale is removed by the final normalization, so this option cannot be combined with --no-normalize.
           

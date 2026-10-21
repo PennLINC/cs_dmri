@@ -21,7 +21,7 @@ use cs_dmri::multitissue::mtnormalise::{
 use cs_dmri::CsDmriError;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Multi-tissue intensity normalization and bias field correction in the log domain (Raffelt et al., 2017; Dhollander et al., 2021)")]
+#[command(version, about = "Multi-tissue intensity normalization and bias field correction in the log domain (Raffelt et al., 2017; Dhollander, Tabbara et al., 2021)")]
 struct Cli {
     /// Input white matter FOD NIfTI (4D, one volume per SH coefficient).
     #[arg(long)]

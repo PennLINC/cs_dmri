@@ -57,7 +57,7 @@ by the Bayesian information criterion among a set of candidate orders.
 ## Intensity normalization
 
 Multi-tissue normalization follows MRtrix3's `mtnormalise` (Raffelt et al.,
-2017; Dhollander et al., 2021). A smooth multiplicative field, the exponential
+2017; Dhollander, Tabbara et al., 2021). A smooth multiplicative field, the exponential
 of a polynomial (default order 3), and per-tissue balance factors are estimated
 so that the balanced sum of the tissue compartments approximates a constant
 ($1/\sqrt{4\pi}$ by default) in inlier voxels, with outliers rejected by an
