@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "cs_dmri"
 # Version comes from [workspace.package].version in ../Cargo.toml.
 dynamic = ["version"]
-description = "Diffusion MRI quality control, SHORE compressed-sensing fits, RESTORE tensors and SS3T-CSD, in Rust"
+description = "Diffusion MRI quality control, SHORE compressed-sensing fits, RESTORE tensors, SS3T-CSD and continuous-b multi-tissue CSD, in Rust"
 readme = "README.md"
 requires-python = ">=3.9"
 # Bulk of the package is MIT OR Apache-2.0. Two Rust modules ported from
@@ -15,7 +15,7 @@ requires-python = ">=3.9"
 # LICENSE-MRTRIX, LICENSE-DIPY).
 license = { text = "(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause" }
 authors = [{ name = "Matt Cieslak", email = "mattcieslak@gmail.com" }]
-keywords = ["diffusion-mri", "quality-control", "shore", "csd", "neuroimaging"]
+keywords = ["diffusion-mri", "quality-control", "shore", "csd", "dsi", "neuroimaging"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",

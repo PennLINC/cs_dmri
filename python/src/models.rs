@@ -20,7 +20,7 @@ use cs_dmri::ShoreBasis;
 
 use crate::{affine_from, dwi_data, gradient_table, map_err, run, to_py_dict};
 
-fn put<'py, T: numpy::Element, D: numpy::ndarray::Dimension>(
+pub(crate) fn put<'py, T: numpy::Element, D: numpy::ndarray::Dimension>(
     d: &Bound<'py, PyDict>,
     k: &str,
     a: numpy::ndarray::Array<T, D>,
@@ -30,7 +30,7 @@ fn put<'py, T: numpy::Element, D: numpy::ndarray::Dimension>(
 
 /// Output format from an explicit `odx convert`-style name, or inferred from
 /// the file extension.
-fn resolve_format(
+pub(crate) fn resolve_format(
     path: &std::path::Path,
     format: Option<&str>,
     fixel_container: &str,
@@ -421,14 +421,14 @@ pub fn shore_export<'py>(
 
 // ------------------------------------------------------------- responses
 
-fn response_from(coeffs: PyReadonlyArray2<f64>, lmax: usize) -> TissueResponse {
+pub(crate) fn response_from(coeffs: PyReadonlyArray2<f64>, lmax: usize) -> TissueResponse {
     TissueResponse {
         coeffs: coeffs.as_array().rows().into_iter().map(|r| r.to_vec()).collect(),
         lmax,
     }
 }
 
-fn response_to_py<'py>(py: Python<'py>, r: &TissueResponse) -> PyResult<(Bound<'py, PyArray2<f64>>, usize)> {
+pub(crate) fn response_to_py<'py>(py: Python<'py>, r: &TissueResponse) -> PyResult<(Bound<'py, PyArray2<f64>>, usize)> {
     let ncol = r.coeffs.iter().map(|c| c.len()).max().unwrap_or(0);
     let a = Array2::from_shape_fn((r.coeffs.len(), ncol), |(i, j)| r.coeffs[i].get(j).copied().unwrap_or(0.0));
     Ok((a.into_pyarray_bound(py), r.lmax))

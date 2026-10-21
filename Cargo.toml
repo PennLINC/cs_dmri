@@ -19,7 +19,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-description = "Diffusion MRI quality control, 3D-SHORE compressed-sensing fits, RESTORE tensors and SS3T-CSD"
+description = "Diffusion MRI quality control, 3D-SHORE compressed-sensing fits, RESTORE tensors, SS3T-CSD and continuous-b multi-tissue CSD"
 publish = false
 
 [lib]
@@ -61,6 +61,14 @@ path = "src/bin/cs-ss3t-full.rs"
 [[bin]]
 name = "cs-qc"
 path = "src/bin/cs-qc.rs"
+
+[[bin]]
+name = "consh"
+path = "src/bin/consh.rs"
+
+[[bin]]
+name = "consh-response"
+path = "src/bin/consh-response.rs"
 
 [dependencies]
 nalgebra = "0.33"

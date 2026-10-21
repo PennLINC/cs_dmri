@@ -70,6 +70,23 @@
 .. autofunction:: cs_dmri.multitissue.ss3t_pipeline
 ```
 
+## Continuous-b multi-tissue CSD
+
+```{eval-rst}
+.. autoclass:: cs_dmri.consh.DenseBResponses
+   :members:
+
+.. autofunction:: cs_dmri.consh.estimate_dense_b_responses
+
+.. autoclass:: cs_dmri.consh.ConshModel
+   :members:
+
+.. autoclass:: cs_dmri.consh.ConshFit
+   :members:
+
+.. autofunction:: cs_dmri.consh.consh_pipeline
+```
+
 ## Output formats
 
 ```{eval-rst}

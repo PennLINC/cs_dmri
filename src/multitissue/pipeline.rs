@@ -44,6 +44,8 @@ pub enum PipelineStage {
     ResponseEstimation,
     /// SS3T decomposition (per-voxel progress).
     Ss3t,
+    /// Continuous-b multi-tissue deconvolution, ConSH (per-voxel progress).
+    Consh,
     /// mtnormalise.
     Normalize,
 }

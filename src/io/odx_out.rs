@@ -265,6 +265,37 @@ pub fn write_continuous_b_odx(
     )
 }
 
+/// [`write_continuous_b_odx`] with the voxel-to-world affine given directly
+/// instead of read from the DWI NIfTI, in any [`OutputFormat`]. `source` is
+/// recorded as the BIDS `Sources` entry when given.
+#[allow(clippy::too_many_arguments)]
+pub fn write_continuous_b_odx_with_affine(
+    output_path: &Path,
+    raw_affine: [[f64; 4]; 4],
+    source: Option<&Path>,
+    mask: &Array3<bool>,
+    wm: &Array4<f32>,
+    gm: &Array4<f32>,
+    csf: &Array4<f32>,
+    lmax_wm: usize,
+    responses: [&TissueResponse; 3],
+    response_key: &str,
+    b_step: f64,
+    floor: Option<&Array4<f32>>,
+    overwrite: bool,
+    format: OutputFormat,
+    peak_min_amplitude: f32,
+    peak_min_amplitude_frac: f32,
+    quant_meta: Option<&ContinuousBQuantMeta>,
+) -> Result<()> {
+    let [wm_response, gm_response, csf_response] = responses;
+    write_multitissue_odx(
+        output_path, raw_affine, source, mask, wm, gm, csf, lmax_wm, wm_response, gm_response,
+        csf_response, response_key, Some(b_step), floor, overwrite, format,
+        peak_min_amplitude, peak_min_amplitude_frac, quant_meta,
+    )
+}
+
 /// Shared multi-tissue ODX writer: packs WM SH glyphs, GM/CSF compartments, the
 /// brain mask, and WM peaks, recording the three tissue responses in the header
 /// under `response_key`. `b_step` is `Some` only for dense-b (continuous-b) responses,

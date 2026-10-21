@@ -1,5 +1,19 @@
 # Changes
 
+## Unreleased
+
+- Continuous-b multi-tissue CSD (ConSH) for non-shelled and multi-shell data:
+  dense-b response estimation with three row estimators (Gaussian-in-b kernel,
+  constrained smooth fit, and the parametric response of Morez et al., 2021),
+  joint deconvolution with an optional noise-floor compartment, per-voxel
+  gradient-nonlinearity correction, absolute-scale output, and pooling of
+  responses across scans. Command-line tools `consh` and `consh-response`;
+  Python `consh_pipeline`, `ConshModel`, `ConshFit`, `DenseBResponses` and
+  `estimate_dense_b_responses`.
+- A page with the commands for a group ConSH analysis.
+- `DWI.source` records the file a series was read from; exported derivatives
+  name it as their source.
+
 ## 0.2.0
 
 - 3D-SHORE fitting stops with an error on data with a single non-zero b-value

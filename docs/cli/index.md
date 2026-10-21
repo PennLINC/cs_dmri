@@ -13,6 +13,8 @@ Each page reproduces the tool's `--help` output.
 | [`cs-ss3t`](cs-ss3t.md) | Single-shell three-tissue CSD with given response functions. |
 | [`cs-mtnorm`](cs-mtnorm.md) | Multi-tissue intensity normalization of tissue maps. |
 | [`cs-ss3t-full`](cs-ss3t-full.md) | Response estimation, SS3T-CSD and intensity normalization in one step. |
+| [`consh`](consh.md) | Continuous-b multi-tissue CSD (ConSH): dense-b response estimation, deconvolution and intensity normalization for non-shelled or multi-shell data. |
+| [`consh-response`](consh-response.md) | Pools per-scan ConSH responses into one group response. |
 
 ```{toctree}
 :hidden:
@@ -26,4 +28,6 @@ cs-response
 cs-ss3t
 cs-mtnorm
 cs-ss3t-full
+consh
+consh-response
 ```

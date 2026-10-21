@@ -1,14 +1,15 @@
 # Exporting results
 
-Orientation results, the SHORE ODFs and the SS3T white-matter FODs, are stored
-natively in the [ODX](https://github.com/PennLINC/odx-rs) format. From Python
+Orientation results, the SHORE ODFs and the SS3T and ConSH white-matter FODs,
+are stored natively in the [ODX](https://github.com/PennLINC/odx-rs) format. From Python
 they can also be written for DSI Studio, dipy and MRtrix3, using the format
 converters of odx-rs.
 
 ## Python
 
-{meth}`ShoreFit.export <cs_dmri.shore.ShoreFit.export>` and
-{meth}`SS3TFit.export <cs_dmri.multitissue.SS3TFit.export>` write a fit to one
+{meth}`ShoreFit.export <cs_dmri.shore.ShoreFit.export>`,
+{meth}`SS3TFit.export <cs_dmri.multitissue.SS3TFit.export>` and
+{meth}`ConshFit.export <cs_dmri.consh.ConshFit.export>` write a fit to one
 file or directory. The format is inferred from the extension:
 
 ```python
@@ -72,7 +73,7 @@ Coordinate conventions:
 ## Command line
 
 The command-line tools write ODX (`cs-odf`, `cs-fit --odx-output`,
-`cs-ss3t-full --odx`). Other formats are produced from the ODX file with the
+`cs-ss3t-full --odx`, `consh --odx`). Other formats are produced from the ODX file with the
 `odx` tool of odx-rs:
 
 ```bash

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 """cs_dmri: diffusion MRI quality control, SHORE compressed-sensing fits,
-RESTORE tensors and single-shell three-tissue CSD, implemented in Rust.
+RESTORE tensors, single-shell three-tissue CSD and continuous-b multi-tissue
+CSD (ConSH), implemented in Rust.
 
 >>> import cs_dmri as cs
 >>> dwi = cs.DWI.from_files("dwi.nii.gz", "dwi.bval", "dwi.bvec", mask="mask.nii.gz")
@@ -8,8 +9,9 @@ RESTORE tensors and single-shell three-tissue CSD, implemented in Rust.
 >>> dwi.qc().to_dict(prefix="raw_")      # doctest: +SKIP
 """
 
-from . import dti, multitissue, qc, shore
+from . import consh, dti, multitissue, qc, shore
 from ._cs_dmri import version as _version
+from .consh import ConshFit, ConshModel, DenseBResponses, consh_pipeline, estimate_dense_b_responses
 from .dti import RestoreFit, RestoreModel
 from ._spatial import SpatialWarning
 from .dwi import DWI
@@ -21,7 +23,8 @@ from .shore import ShoreFit, ShoreModel
 
 __version__ = _version()
 
-#: Output formats accepted by ``ShoreFit.export`` and ``SS3TFit.export``.
+#: Output formats accepted by ``ShoreFit.export``, ``SS3TFit.export`` and
+#: ``ConshFit.export``.
 EXPORT_FORMATS = (
     "odx-archive",
     "odx-directory",
@@ -33,7 +36,10 @@ EXPORT_FORMATS = (
 )
 
 __all__ = [
+    "ConshFit",
+    "ConshModel",
     "DWI",
+    "DenseBResponses",
     "EXPORT_FORMATS",
     "GradientTable",
     "QCReport",
@@ -47,7 +53,10 @@ __all__ = [
     "ShoreModel",
     "TissueResponse",
     "__version__",
+    "consh",
+    "consh_pipeline",
     "dti",
+    "estimate_dense_b_responses",
     "estimate_responses",
     "mtnormalise",
     "multitissue",

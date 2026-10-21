@@ -470,6 +470,7 @@ impl PipelineObserver for StageProgress {
             ),
             PipelineStage::ResponseEstimation => (None, None),
             PipelineStage::Ss3t => (Some("stage 2/3: SS3T iterative tissue decomposition"), Some("ss3t")),
+            PipelineStage::Consh => (None, None),
             PipelineStage::Normalize => {
                 (Some("stage 3/3: mtnormalise (polynomial bias-field correction)"), None)
             }
