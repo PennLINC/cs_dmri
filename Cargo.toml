@@ -19,7 +19,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-description = "Diffusion MRI quality control, 3D-SHORE compressed-sensing fits, RESTORE tensors and SS3T-CSD"
+description = "Diffusion MRI quality control, 3D-SHORE compressed-sensing fits, RESTORE tensors, SS3T-CSD and continuous-b multi-tissue CSD"
 publish = false
 
 [lib]

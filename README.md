@@ -10,7 +10,9 @@ diffusion MRI data, written in Rust with a Python interface. It provides:
   fiber peaks, propagator-derived scalars and signal synthesis;
 - robust diffusion tensor estimation (RESTORE);
 - single-shell three-tissue constrained spherical deconvolution, including
-  response-function estimation and multi-tissue intensity normalization.
+  response-function estimation and multi-tissue intensity normalization;
+- continuous-b multi-tissue constrained spherical deconvolution (CONSH) for
+  non-shelled acquisitions such as Cartesian and compressed-sensing DSI.
 
 Orientation outputs are written in the [ODX](https://github.com/PennLINC/odx-rs)
 format. The command-line tools and the Python interface share one
@@ -65,6 +67,8 @@ cs-fit --dwi dwi.nii.gz --bval dwi.bval --bvec dwi.bvec --mask mask.nii.gz \
 | `cs-ss3t` | Single-shell three-tissue CSD |
 | `cs-mtnorm` | Multi-tissue intensity normalization |
 | `cs-ss3t-full` | Response estimation, SS3T-CSD and normalization in one step |
+| `consh` | Continuous-b multi-tissue CSD (CONSH) |
+| `consh-response` | Pooling of CONSH responses across scans |
 
 ## License
 

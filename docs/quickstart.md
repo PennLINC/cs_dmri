@@ -26,6 +26,10 @@ shore.export("shore.odx")
 # Single-shell three-tissue CSD (single-shell data)
 ss3t = cs.ss3t_pipeline(dwi)
 ss3t.export("ss3t.fz")                  # for DSI Studio
+
+# Continuous-b multi-tissue CSD (multi-shell or non-shelled data)
+consh = cs.consh_pipeline(dwi)
+consh.export("consh.odx")
 ```
 
 Fits can be exported to ODX, DSI Studio, dipy and MRtrix3 formats; see
@@ -50,6 +54,9 @@ cs-fit --dwi dwi.nii.gz --bval dwi.bval --bvec dwi.bvec --mask mask.nii.gz \
 
 cs-ss3t-full --dwi dwi.nii.gz --bval dwi.bval --bvec dwi.bvec --mask mask.nii.gz \
        --odx ss3t.odx
+
+consh  --dwi dwi.nii.gz --bval dwi.bval --bvec dwi.bvec --mask mask.nii.gz \
+       --odx consh.odx
 ```
 
 Each tool documents its options with `--help`; the same text is reproduced in

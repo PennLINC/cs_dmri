@@ -14,6 +14,9 @@ provides:
 - **Single-shell three-tissue constrained spherical deconvolution** (SS3T-CSD),
   including unsupervised response-function estimation and multi-tissue
   intensity normalization.
+- **Continuous-b multi-tissue CSD** (CONSH) for non-shelled acquisitions such as
+  Cartesian and compressed-sensing DSI, with response functions defined
+  continuously in b and optional per-voxel gradient-nonlinearity correction.
 
 Orientation outputs are written in the [ODX](https://github.com/PennLINC/odx-rs)
 format and can be exported for DSI Studio, dipy and MRtrix3. The command-line tools and the Python interface share one
@@ -35,6 +38,7 @@ user/qc
 user/shore
 user/dti
 user/multitissue
+user/consh
 user/export
 user/conventions
 ```

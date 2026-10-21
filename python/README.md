@@ -2,8 +2,8 @@
 
 Python interface to cs_dmri, a Rust library for the analysis of diffusion MRI
 data: image quality control, 3D-SHORE reconstruction, robust diffusion tensor
-estimation (RESTORE) and single-shell three-tissue constrained spherical
-deconvolution.
+estimation (RESTORE), single-shell three-tissue constrained spherical
+deconvolution, and continuous-b multi-tissue CSD (CONSH) for non-shelled data.
 
 ```bash
 pip install cs_dmri
@@ -21,6 +21,7 @@ cs.QCReport.column_descriptions()               # its data dictionary
 tensor = cs.RestoreModel(dwi.gtab).fit(dwi)     # FA, MD, S0, principal direction
 shore = cs.ShoreModel(dwi.gtab).fit(dwi)        # 3D-SHORE coefficients and diagnostics
 ss3t = cs.ss3t_pipeline(dwi)                    # single-shell three-tissue CSD
+consh = cs.consh_pipeline(dwi)                  # continuous-b multi-tissue CSD
 
 ss3t.export("ss3t.odx")                         # ODX; also .fz, .fib.gz, .pam5, .mif
 ```
