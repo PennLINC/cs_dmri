@@ -14,6 +14,7 @@ pub mod pipeline;
 pub mod response;
 pub mod response_dki;
 pub mod response_estimation;
+pub mod response_pool;
 pub mod response_smooth;
 pub mod sidecar;
 pub mod ss3t;
