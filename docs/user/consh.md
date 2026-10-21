@@ -139,29 +139,10 @@ to deconvolving the absolute signal, while keeping the ratio of penalty to data
 constant across voxels. It requires the final normalization, which then removes
 the smooth bias field and the remaining global scale.
 
-For a study, a group-average response is estimated in three passes ({doc}`consh_group`
-works through a complete example):
-
-```bash
-# 1. responses for every scan
-for s in sub-*; do
-  consh --dwi $s/dwi.nii.gz --bval $s/dwi.bval --bvec $s/dwi.bvec --mask $s/mask.nii.gz \
-        --write-responses-to responses/$s --odx $s/consh_individual.odx
-done
-# 2. pooled response
-consh-response mean responses/sub-* --output responses/group
-# 3. every scan with the group response
-for s in sub-*; do
-  consh --dwi $s/dwi.nii.gz --bval $s/dwi.bval --bvec $s/dwi.bvec --mask $s/mask.nii.gz \
-        --read-responses-from responses/group --quantitative \
-        --output-wm $s/wm_fod.nii.gz --output-gm $s/gm.nii.gz --output-csf $s/csf.nii.gz
-done
-```
-
-```python
-group = cs.DenseBResponses.pool([cs.estimate_dense_b_responses(d) for d in dwis])
-fits = [cs.consh_pipeline(d, responses=group, quantitative=True) for d in dwis]
-```
+For a study, a group-average response is estimated in three passes: a response
+for every scan (`--write-responses-to`), one pooled response (`consh-response
+mean`), and every scan refit with it (`--read-responses-from` and
+`--quantitative`). {doc}`consh_group` gives the commands.
 
 Pooling follows MRtrix3's `responsemean`: each scan's response is first rescaled
 by the geometric mean over rows of the ratio of the group's mean l=0 term to its
