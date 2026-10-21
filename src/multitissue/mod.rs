@@ -5,12 +5,15 @@
 //! to a single-shell DWI by an alternating two-tissue fixed point — together
 //! with response estimation and multi-tissue intensity normalization.
 
+pub mod consh;
 pub mod dhollander;
 pub mod forward;
 pub mod mtnormalise;
 pub mod pipeline;
 pub mod response;
+pub mod response_dki;
 pub mod response_estimation;
+pub mod response_smooth;
 pub mod sidecar;
 pub mod ss3t;
 pub mod volume;

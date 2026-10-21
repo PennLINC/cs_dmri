@@ -62,6 +62,14 @@ path = "src/bin/cs-ss3t-full.rs"
 name = "cs-qc"
 path = "src/bin/cs-qc.rs"
 
+[[bin]]
+name = "consh"
+path = "src/bin/consh.rs"
+
+[[bin]]
+name = "consh-response"
+path = "src/bin/consh-response.rs"
+
 [dependencies]
 nalgebra = "0.33"
 ndarray = "0.16"

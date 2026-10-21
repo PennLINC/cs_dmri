@@ -51,7 +51,11 @@ use crate::io::dwi::DwiData;
 use crate::math::assoc_legendre;
 use crate::multitissue::dhollander::select_voxels;
 pub use crate::multitissue::dhollander::{DhollanderSelectConfig, DhollanderStageCounts};
+use crate::graddev::VoxelGradDev;
+use crate::multitissue::consh::{ConshResponses, DenseBGrid};
 use crate::multitissue::response::TissueResponse;
+use crate::multitissue::response_dki::{DkiResponseFit, DkiResponseFits, dki_dense_rows, fit_dki_response};
+use crate::multitissue::response_smooth::{SmoothResponseConfig, fit_dense_rows};
 use crate::qspace::Shell;
 use crate::{CsDmriError, Result};
 
@@ -109,6 +113,9 @@ pub struct ResponseEstimationDiagnostics {
     /// one unit of AFD mean the same thing across scans (Smith et al. 2022,
     /// "global intensity normalization"). 0.0 if no WM voxels were selected.
     pub wm_b0_median: f64,
+    /// Fitted parameters and goodness of fit of the parametric responses, when
+    /// [`ResponseEstimator::Dki`] produced them.
+    pub dki: Option<DkiResponseFits>,
 }
 
 /// The three estimated responses + selection diagnostics.
@@ -179,6 +186,7 @@ pub fn estimate_responses(
         md_csf_threshold,
         stages,
         wm_b0_median: median_b0(dwi, &wm_voxels, dwi.gtab.b0_threshold),
+        dki: None,
     };
 
     Ok(Ss3tResponseEstimate {
@@ -358,7 +366,7 @@ struct TissueSelection<'a> {
 }
 
 /// Collect DTI-derived features for every masked brain voxel (sorted eigenvalues
-/// + principal direction).
+/// + principal direction). Shared by the single-shell and continuous-b paths.
 fn collect_brain_voxels(dwi: &DwiData, dti: &DtiVolumeResult) -> Vec<Voxel> {
     let s = dwi.data.shape();
     let (nx, ny, nz) = (s[0], s[1], s[2]);
@@ -528,9 +536,283 @@ fn select_tissues_legacy<'a>(
     })
 }
 
+// ================= Continuous-b response estimation =================
+//
+// Generalizes the per-shell Dhollander averaging above to a smooth-in-b
+// (moving-shell) estimate on a dense b-grid, so it feeds
+// [`crate::multitissue::consh`] directly for non-shelled CS-DSI. The tissue
+// SELECTION is identical to the single-shell path (shared via
+// `collect_brain_voxels` / `select_tissues`); only the per-tissue aggregation
+// changes: instead of one mean per shell, a Gaussian-in-b weighted zonal-SH fit
+// at every grid point.
+
+/// Gaussian-in-b weighted zonal-SH least squares (weighted variant of
+/// [`fit_zonal_sh`]). Weights fold in as `√w` on both design rows and target.
+fn fit_zonal_sh_weighted(cos_angles: &[f64], amps: &[f64], w: &[f64], lmax: usize) -> Vec<f64> {
+    use nalgebra::{DMatrix, DVector};
+    let n = cos_angles.len();
+    let n_zonal = lmax / 2 + 1;
+    let mut x = DMatrix::<f64>::zeros(n, n_zonal);
+    let mut y = DVector::<f64>::zeros(n);
+    for i in 0..n {
+        let sw = w[i].max(0.0).sqrt();
+        let c = cos_angles[i];
+        for j in 0..n_zonal {
+            let l = 2 * j;
+            x[(i, j)] = ((2.0 * l as f64 + 1.0) / (4.0 * PI)).sqrt() * legendre(l, c) * sw;
+        }
+        y[i] = amps[i] * sw;
+    }
+    let xtx = x.transpose() * &x;
+    let xty = x.transpose() * &y;
+    match nalgebra::Cholesky::new(xtx) {
+        Some(ch) => {
+            let r = ch.solve(&xty);
+            (0..n_zonal).map(|j| r[j]).collect()
+        }
+        None => vec![0.0; n_zonal], // ill-posed grid point (too little b-support)
+    }
+}
+
+/// Configuration for continuous-b response estimation.
+#[derive(Debug, Clone, Copy)]
+pub struct ConshResponseConfig {
+    /// Tissue-selection thresholds (shared with the single-shell estimator).
+    pub dhollander: DhollanderConfig,
+    /// Dense b-grid step in s/mm² (must match the deconvolution's `step`).
+    pub step: f64,
+    /// Gaussian kernel width in b for the moving-shell fit.
+    pub sigma_b: f64,
+    /// Grid points whose total sample weight is below this fraction of the
+    /// per-point average carry the previous point's coefficients forward.
+    pub min_weight_frac: f64,
+    /// Extend the dense-b grid to at least this b (must match the
+    /// deconvolution's [`crate::multitissue::consh::ConshConfig::grid_bmax`]).
+    pub grid_bmax: Option<f64>,
+    /// How the pooled samples become dense-b rows. Default
+    /// [`ResponseEstimator::Kernel`], which matches MRtrix's per-shell responses
+    /// on shelled data.
+    pub estimator: ResponseEstimator,
+    /// Settings of [`ResponseEstimator::Smooth`].
+    pub smooth: SmoothResponseConfig,
+}
+
+/// Dense-b row estimator for [`estimate_consh_responses`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResponseEstimator {
+    /// Each row fit on its own from a Gaussian-in-b (`sigma_b`) window of the
+    /// samples; thin rows carry the previous row forward. Faithful on densely
+    /// b-sampled data; a staircase on shelled data and noisy or carried-forward
+    /// between the b-values of sparse non-shelled schemes.
+    #[default]
+    Kernel,
+    /// All rows fit jointly: linear-in-b interpolation of the data term,
+    /// second-difference smoothness across rows, and constraints exact at any
+    /// lmax (spherical mean ≥ 0 and non-increasing in b, WM zonal sign pattern).
+    /// See [`crate::multitissue::response_smooth`]. Robust to sparse non-shelled
+    /// (CS-DSI) and gradient-deviated sampling.
+    Smooth,
+    /// Parametric: one axially symmetric DKI + offset response per tissue
+    /// (7 parameters WM, 4 GM/CSF) fit to all samples at once, non-increasing
+    /// in b on the whole grid — Morez et al. 2021. Rows are its zonal
+    /// projection at each grid b. See [`crate::multitissue::response_dki`].
+    Dki,
+}
+
+impl Default for ConshResponseConfig {
+    fn default() -> Self {
+        Self {
+            dhollander: DhollanderConfig::default(),
+            step: 50.0,
+            sigma_b: 150.0,
+            min_weight_frac: 0.05,
+            grid_bmax: None,
+            estimator: ResponseEstimator::Kernel,
+            smooth: SmoothResponseConfig::default(),
+        }
+    }
+}
+
+/// Estimate dense-b (continuous-in-b) WM/GM/CSF responses from raw DWI, ready
+/// for [`crate::multitissue::consh::ConshMsmtPlan`].
+///
+/// All three tissues are scaled by ONE common per-scan reference — the
+/// Dhollander single-fiber-WM median b=0, the same value recorded as
+/// `ReferenceB0Signal` in the ODX sidecar — so the relative amplitudes BETWEEN
+/// tissues are preserved (CSF b=0 ≈ 2.6× WM, the T2/PD contrast), exactly as
+/// MRtrix's `amp2response`/`dwi2response dhollander` responses preserve them.
+/// The result is `amp2response`'s raw-signal response divided by one per-scan
+/// constant: identical to MRtrix up to a global scale (which the final
+/// `mtnormalise` pins), and gain-free (receiver gain cancels in the ratio).
+///
+/// Consequence: the WM b=0 coefficient is only ≈ `√4π` (mean/median ratio of
+/// the single-fiber b=0 population), not exactly `√4π`. Do not assert
+/// exact anchoring downstream; per-scan magnitude differences between response
+/// files are real signal (PD·T2 and shape), compensated when pooling
+/// (`consh-response mean`, matching `responsemean`'s default) and by
+/// `mtnormalise` at fit time.
+pub fn estimate_consh_responses(
+    dwi: &DwiData,
+    dti: &DtiVolumeResult,
+    cfg: &ConshResponseConfig,
+) -> Result<(ConshResponses, ResponseEstimationDiagnostics)> {
+    estimate_consh_responses_graddev(dwi, dti, cfg, None)
+}
+
+/// [`estimate_consh_responses`] with an optional gradient-deviation field: each
+/// selected voxel's samples are pooled at its effective b-values and gradient
+/// directions (see [`crate::graddev`]), so the responses describe the tissue
+/// rather than the scanner's deviation, and the grid's upper rows (b above the
+/// nominal bmax, reached where `|Tᵀg| > 1`) are estimated from real samples.
+/// `dti` should come from a fit with the same effective tables, so the
+/// principal directions the WM samples are measured against share their frame.
+pub fn estimate_consh_responses_graddev(
+    dwi: &DwiData,
+    dti: &DtiVolumeResult,
+    cfg: &ConshResponseConfig,
+    graddev: Option<&VoxelGradDev>,
+) -> Result<(ConshResponses, ResponseEstimationDiagnostics)> {
+    let factor = (4.0 * PI).sqrt();
+    let s = dwi.data.shape();
+    let shape = (s[0], s[1], s[2]);
+    let brain = collect_brain_voxels(dwi, dti);
+    if brain.is_empty() {
+        return Err(CsDmriError::Other("response estimation: no valid brain voxels".into()));
+    }
+    let sel = select_tissues(dwi, dti, &brain, shape, &cfg.dhollander)?;
+
+    let grid = DenseBGrid::for_gtab_min_bmax(&dwi.gtab, cfg.step, cfg.grid_bmax);
+    let ng = grid.len();
+    let (mut tb, mut td) = (Vec::new(), Vec::new());
+    let lmax = cfg.dhollander.lmax_wm;
+    let n_zonal = lmax / 2 + 1;
+    let b0_thr = dwi.gtab.b0_threshold;
+
+    // The common per-scan reference every tissue is divided by. Median (not
+    // mean) so one bright outlier voxel cannot shift the whole scan's scale.
+    let ref_b0 = median_b0(dwi, &sel.wm, b0_thr);
+    if ref_b0 <= 0.0 {
+        return Err(CsDmriError::Other(
+            "response estimation: WM single-fiber median b=0 is not positive — cannot scale responses".into(),
+        ));
+    }
+
+    // DW gradient indices shared across voxels. The parametric fit also takes
+    // the b=0 volumes: they fix its S0 + C, where the other estimators pin the
+    // b=0 row to the measured mean instead.
+    let dw: Vec<usize> = (0..dwi.gtab.n_grads()).filter(|&i| dwi.gtab.bvals[i] > b0_thr).collect();
+    let all: Vec<usize> = (0..dwi.gtab.n_grads()).collect();
+    let pooled = if cfg.estimator == ResponseEstimator::Dki { &all } else { &dw };
+    let grid_top = grid.bs.last().copied().unwrap_or(0.0);
+
+    // ---- WM: pool (b, cos, S/ref) then weighted zonal fit per grid point ----
+    let mut pool_b = Vec::new();
+    let mut pool_cos = Vec::new();
+    let mut pool_y = Vec::new();
+    let mut pool_s0 = Vec::new();
+    let mut wm_b0_sum = 0.0_f64;
+    let mut wm_b0_n = 0.0_f64;
+    for v in &sel.wm {
+        let (x, y, z) = v.idx;
+        let view = dwi.data.slice(ndarray::s![x, y, z, ..]);
+        let s0 = mean_b0(&view, dwi, b0_thr);
+        if s0 <= 0.0 {
+            // Validity guard only (dead or degenerate voxel): the signal is
+            // scaled by the common `ref_b0`, not by s0.
+            continue;
+        }
+        wm_b0_sum += s0;
+        wm_b0_n += 1.0;
+        let pd = unit(v.principal_dir);
+        voxel_table(dwi, graddev, v.idx, &mut tb, &mut td);
+        for &i in pooled {
+            let g = td[i];
+            pool_b.push(tb[i]);
+            pool_cos.push((g[0] * pd[0] + g[1] * pd[1] + g[2] * pd[2]).abs()); // axial symmetry
+            pool_y.push(view[i] as f64 / ref_b0);
+            pool_s0.push(s0);
+        }
+    }
+    // Measured WM b=0 amplitude on the common-reference scale: mean b=0 of the
+    // training voxels over the median (≈ 1, exactly 1 only when mean == median).
+    let wm_b0_coeff = if wm_b0_n > 0.0 { wm_b0_sum / wm_b0_n / ref_b0 * factor } else { factor };
+    let mut wm_dki = None;
+    let wm_rows = match cfg.estimator {
+        ResponseEstimator::Dki => {
+            let (y, w) = per_voxel_shape(&pool_y, &pool_s0, ref_b0, wm_b0_coeff / factor);
+            let fit = fit_dki_response(&pool_b, Some(&pool_cos), &y, Some(&w), grid_top)?;
+            let rows = dki_dense_rows(&fit.params, &grid, lmax);
+            wm_dki = Some(fit);
+            rows
+        }
+        ResponseEstimator::Smooth => {
+            let mut b0_row = vec![0.0; n_zonal];
+            b0_row[0] = wm_b0_coeff;
+            let (y, w) = per_voxel_shape(&pool_y, &pool_s0, ref_b0, wm_b0_coeff / factor);
+            fit_dense_rows(&grid, b0_thr, &b0_row, lmax, &pool_b, Some(&pool_cos), &y, Some(&w), &cfg.smooth)?
+        }
+        ResponseEstimator::Kernel => {
+            let mut wm_rows: Vec<Vec<f64>> = Vec::with_capacity(ng);
+            let mut w_buf = vec![0.0_f64; pool_b.len()];
+            let avg_weight_target = pool_b.len() as f64 / ng.max(1) as f64;
+            for k in 0..ng {
+                if grid.bs[k] <= b0_thr {
+                    let mut row = vec![0.0; n_zonal];
+                    row[0] = wm_b0_coeff; // WM b=0 isotropic, measured (≈ √4π)
+                    wm_rows.push(row);
+                    continue;
+                }
+                let bg = grid.bs[k];
+                let mut wsum = 0.0;
+                for (i, &bi) in pool_b.iter().enumerate() {
+                    let wt = (-0.5 * ((bi - bg) / cfg.sigma_b).powi(2)).exp();
+                    w_buf[i] = wt;
+                    wsum += wt;
+                }
+                if wsum < cfg.min_weight_frac * avg_weight_target {
+                    wm_rows.push(wm_rows.last().cloned().unwrap_or_else(|| vec![0.0; n_zonal]));
+                    continue;
+                }
+                wm_rows.push(fit_zonal_sh_weighted(&pool_cos, &pool_y, &w_buf, lmax));
+            }
+            wm_rows
+        }
+    };
+
+    // ---- GM / CSF: weighted mean S/ref per grid point ----
+    let (gm_rows, gm_dki) = iso_dense_rows(dwi, graddev, &sel.gm, &grid, pooled, cfg, b0_thr, factor, ref_b0)?;
+    let (csf_rows, csf_dki) = iso_dense_rows(dwi, graddev, &sel.csf, &grid, pooled, cfg, b0_thr, factor, ref_b0)?;
+    let dki = match (wm_dki, gm_dki, csf_dki) {
+        (Some(wm), Some(gm), Some(csf)) => Some(DkiResponseFits { wm, gm, csf }),
+        _ => None,
+    };
+
+    let diagnostics = ResponseEstimationDiagnostics {
+        n_brain_voxels: brain.len(),
+        n_wm_voxels: sel.wm.len(),
+        n_gm_voxels: sel.gm.len(),
+        n_csf_voxels: sel.csf.len(),
+        md_csf_threshold: sel.md_threshold,
+        stages: sel.stages,
+        wm_b0_median: ref_b0,
+        dki,
+    };
+    let _ = (&sel.wm_mask, &sel.gm_mask, &sel.csf_mask);
+    Ok((
+        ConshResponses {
+            wm: TissueResponse { coeffs: wm_rows, lmax },
+            gm: TissueResponse { coeffs: gm_rows, lmax: 0 },
+            csf: TissueResponse { coeffs: csf_rows, lmax: 0 },
+        },
+        diagnostics,
+    ))
+}
+
 /// Median of the per-voxel mean b=0 signal over `voxels`. Over the WM
-/// single-fiber voxels this is the `DWI_ref` recorded in
-/// [`ResponseEstimationDiagnostics`]; the median rather than the mean so one bright outlier (a vessel, a mis-selected
+/// single-fiber voxels this is both the `DWI_ref` recorded in
+/// [`ResponseEstimationDiagnostics`] and the common per-scan reference every
+/// tissue's training signal is divided by in [`estimate_consh_responses`]; the
+/// median rather than the mean so one bright outlier (a vessel, a mis-selected
 /// CSF voxel) cannot shift the reference the whole scan is expressed against.
 fn median_b0(dwi: &DwiData, voxels: &[&Voxel], b0_thr: f64) -> f64 {
     if voxels.is_empty() {
@@ -563,6 +845,120 @@ fn mean_b0(
     }
     if n > 0.0 { sum / n } else { 0.0 }
 }
+
+fn unit(v: [f64; 3]) -> [f64; 3] {
+    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-12);
+    [v[0] / n, v[1] / n, v[2] / n]
+}
+
+/// Samples and weights for the smooth estimator: each voxel's own `S/S0` (the
+/// shape of the decay) times one tissue-level scale (its mean `S0` over the
+/// common reference — the b=0 row), weighted by `(S0/ref)²`. That is the
+/// least-squares fit of `S/ref = (S0/ref) · shape`: every voxel still counts in
+/// proportion to its signal, as with `S/ref` samples, but its brightness no
+/// longer enters the shape. With `S/ref` samples, brightness and b-dependence
+/// mix whenever rows are informed by different voxels — and the off-shell
+/// b-values a gradient-deviation field creates come only from the periphery,
+/// where S0 differs. The kernel estimator keeps `S/ref` (MRtrix parity).
+fn per_voxel_shape(pool_y: &[f64], pool_s0: &[f64], ref_b0: f64, tissue_scale: f64) -> (Vec<f64>, Vec<f64>) {
+    pool_y
+        .iter()
+        .zip(pool_s0)
+        .map(|(&y, &s0)| (y * ref_b0 / s0 * tissue_scale, (s0 / ref_b0).powi(2)))
+        .unzip()
+}
+
+/// The gradient table voxel `idx` was measured with: its graddev effective
+/// table when a non-identity field is given, else the nominal one.
+fn voxel_table(
+    dwi: &DwiData,
+    graddev: Option<&VoxelGradDev>,
+    (x, y, z): (usize, usize, usize),
+    bvals: &mut Vec<f64>,
+    dirs: &mut Vec<[f64; 3]>,
+) {
+    match graddev {
+        Some(gd) if !gd.is_identity(x, y, z) => gd.effective_table_into(dwi, x, y, z, bvals, dirs),
+        _ => {
+            bvals.clone_from(&dwi.gtab.bvals);
+            dirs.clone_from(&dwi.gtab.bvecs);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn iso_dense_rows(
+    dwi: &DwiData,
+    graddev: Option<&VoxelGradDev>,
+    voxels: &[&Voxel],
+    grid: &DenseBGrid,
+    dw: &[usize],
+    cfg: &ConshResponseConfig,
+    b0_thr: f64,
+    factor: f64,
+    ref_b0: f64,
+) -> Result<(Vec<Vec<f64>>, Option<DkiResponseFit>)> {
+    let mut pool_b = Vec::new();
+    let mut pool_y = Vec::new();
+    let mut pool_s0 = Vec::new();
+    let mut b0_sum = 0.0_f64;
+    let mut b0_n = 0.0_f64;
+    let (mut tb, mut td) = (Vec::new(), Vec::new());
+    for v in voxels {
+        let (x, y, z) = v.idx;
+        let view = dwi.data.slice(ndarray::s![x, y, z, ..]);
+        let s0 = mean_b0(&view, dwi, b0_thr);
+        if s0 <= 0.0 {
+            // Validity guard only — the common ref_b0 sets the scale.
+            continue;
+        }
+        b0_sum += s0;
+        b0_n += 1.0;
+        voxel_table(dwi, graddev, v.idx, &mut tb, &mut td);
+        for &i in dw {
+            pool_b.push(tb[i]);
+            pool_y.push(view[i] as f64 / ref_b0);
+            pool_s0.push(s0);
+        }
+    }
+    // Measured tissue b=0 amplitude relative to the common WM reference — this
+    // is where the inter-tissue T2/PD contrast (CSF ≈ 2.6× WM) survives.
+    let b0_coeff = if b0_n > 0.0 { b0_sum / b0_n / ref_b0 * factor } else { factor };
+    match cfg.estimator {
+        ResponseEstimator::Smooth => {
+            let (y, w) = per_voxel_shape(&pool_y, &pool_s0, ref_b0, b0_coeff / factor);
+            let rows = fit_dense_rows(grid, b0_thr, &[b0_coeff], 0, &pool_b, None, &y, Some(&w), &cfg.smooth)?;
+            return Ok((rows, None));
+        }
+        ResponseEstimator::Dki => {
+            let (y, w) = per_voxel_shape(&pool_y, &pool_s0, ref_b0, b0_coeff / factor);
+            let top = grid.bs.last().copied().unwrap_or(0.0);
+            let fit = fit_dki_response(&pool_b, None, &y, Some(&w), top)?;
+            return Ok((dki_dense_rows(&fit.params, grid, 0), Some(fit)));
+        }
+        ResponseEstimator::Kernel => {}
+    }
+    let mut rows = Vec::with_capacity(grid.len());
+    for k in 0..grid.len() {
+        if grid.bs[k] <= b0_thr {
+            rows.push(vec![b0_coeff]);
+            continue;
+        }
+        let bg = grid.bs[k];
+        let mut num = 0.0;
+        let mut den = 0.0;
+        for (i, &bi) in pool_b.iter().enumerate() {
+            let wt = (-0.5 * ((bi - bg) / cfg.sigma_b).powi(2)).exp();
+            num += wt * pool_y[i];
+            den += wt;
+        }
+        let mean = if den > 1e-12 { num / den } else { rows.last().map_or(0.0, |r: &Vec<f64>| r[0] / factor) };
+        rows.push(vec![mean * factor]);
+    }
+    Ok((rows, None))
+}
+
+// ------------------ MRtrix .txt response output ------------------
 
 // ------------------ MRtrix .txt response output ------------------
 
@@ -640,5 +1036,426 @@ mod tests {
         for j in 0..3 {
             assert_abs_diff_eq!(r_fit[j], r_true[j], epsilon = 1e-9);
         }
+    }
+
+    fn weighted_zonal_fit_matches_unweighted_on_exact_data() {
+        // On exact (noise-free) data, non-uniform weights must not change the
+        // recovered coefficients (weighted LSQ of a consistent system).
+        let lmax = 4;
+        let r_true = [1.2_f64, -0.5, 0.2];
+        let cos: Vec<f64> = (0..40).map(|i| -1.0 + 2.0 * i as f64 / 39.0).collect();
+        let amps: Vec<f64> = cos
+            .iter()
+            .map(|&c| {
+                (0..3)
+                    .map(|j| {
+                        let l = 2 * j;
+                        r_true[j] * ((2.0 * l as f64 + 1.0) / (4.0 * PI)).sqrt() * legendre(l, c)
+                    })
+                    .sum()
+            })
+            .collect();
+        let w: Vec<f64> = (0..40).map(|i| 0.1 + (i as f64 % 5.0)).collect();
+        let r = fit_zonal_sh_weighted(&cos, &amps, &w, lmax);
+        for j in 0..3 {
+            assert_abs_diff_eq!(r[j], r_true[j], epsilon = 1e-9);
+        }
+    }
+    fn consh_response_estimator_recovers_planted_wm_response() {
+        use crate::io::dwi::DwiData;
+        use crate::dti::DtiVolumeResult;
+        use crate::qspace::{BvecFrame, GradientTable};
+        use ndarray::{Array3, Array4};
+
+        // --- gradient scheme: 6 b0 + 30 dirs at each of b=1000,2000,3000. ---
+        let sphere = odx_rs::formats::dsistudio_odf8::hemisphere_vertices_ras();
+        let dirs: Vec<[f64; 3]> = sphere
+            .iter()
+            .step_by((sphere.len() / 30).max(1))
+            .take(30)
+            .map(|v| [v[0] as f64, v[1] as f64, v[2] as f64])
+            .collect();
+        let mut bvals = vec![0.0; 6];
+        let mut bvecs: Vec<[f64; 3]> = vec![[0.0; 3]; 6];
+        for &b in &[1000.0, 2000.0, 3000.0] {
+            for d in &dirs {
+                bvals.push(b);
+                bvecs.push(*d);
+            }
+        }
+        let gtab = GradientTable::new(bvals.clone(), bvecs.clone(), Some(0.043), Some(0.011), None)
+            .unwrap();
+        let ng = gtab.n_grads();
+
+        // --- planted WM zonal response r_ℓ(b) (S0=1 scale), smooth in b. ---
+        let r_true = |b: f64| -> [f64; 3] {
+            let e = (-0.7e-3 * b).exp();
+            [e, -0.35 * e, 0.12 * e]
+        };
+        let ylm0 = |l: usize, c: f64| ((2.0 * l as f64 + 1.0) / (4.0 * PI)).sqrt() * legendre(l, c);
+
+        // --- a 40-voxel volume: 8 WM (varied fiber dirs) + 6 CSF + 26 GM. ---
+        let n_vox = 40;
+        let mut data = Array4::<f32>::zeros((n_vox, 1, 1, ng));
+        let mut mask = Array3::<bool>::from_elem((n_vox, 1, 1), true);
+        let _ = &mut mask;
+        let mut fa = Array3::<f32>::zeros((n_vox, 1, 1));
+        let mut md = Array3::<f32>::zeros((n_vox, 1, 1));
+        let mut s0v = Array3::<f32>::from_elem((n_vox, 1, 1), 1000.0);
+        let mut tensor = Array4::<f32>::zeros((n_vox, 1, 1, 6));
+        let mut pdir = Array4::<f32>::zeros((n_vox, 1, 1, 3));
+
+        let wm_fibers = [
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.577, 0.577, 0.577],
+            [0.707, 0.707, 0.0],
+            [0.0, 0.707, 0.707],
+            [0.707, 0.0, 0.707],
+            [0.267, 0.535, 0.802],
+        ];
+        for vox in 0..n_vox {
+            let s0 = 1000.0_f64;
+            // classify: 0..8 WM, 8..14 CSF, 14..40 GM.
+            let (class, dir): (u8, [f64; 3]) = if vox < 8 {
+                (0u8, wm_fibers[vox])
+            } else if vox < 14 {
+                (1u8, [0.0, 0.0, 1.0])
+            } else {
+                (2u8, [0.0, 0.0, 1.0])
+            };
+            let d = {
+                let n = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt().max(1e-9);
+                [dir[0] / n, dir[1] / n, dir[2] / n]
+            };
+            // b0 volumes = s0.
+            for i in 0..6 {
+                data[(vox, 0, 0, i)] = s0 as f32;
+            }
+            for i in 6..ng {
+                let b = bvals[i];
+                let g = bvecs[i];
+                let val = match class {
+                    0 => {
+                        // WM: S0 · Σ r_ℓ(b) Y_ℓ0(g·fiber)
+                        let cos = g[0] * d[0] + g[1] * d[1] + g[2] * d[2];
+                        let r = r_true(b);
+                        s0 * (0..3).map(|j| r[j] * ylm0(2 * j, cos)).sum::<f64>()
+                    }
+                    1 => s0 * (-3.0e-3 * b).exp(), // CSF fast isotropic
+                    _ => s0 * (-1.2e-3 * b).exp(), // GM
+                };
+                data[(vox, 0, 0, i)] = val as f32;
+            }
+            // DTI fields to make selection unambiguous.
+            match class {
+                0 => {
+                    fa[(vox, 0, 0)] = 0.8;
+                    md[(vox, 0, 0)] = 0.77e-3;
+                    // eigenvalues 1.7/0.3/0.3 e-3 along the fiber → dominance ≈ 5.7.
+                    // Express the tensor in the lab frame: λ1 d dᵀ + λ⊥(I − d dᵀ).
+                    let (l1, lp) = (1.7e-3_f64, 0.3e-3_f64);
+                    let dd = |a: usize, b: usize| d[a] * d[b];
+                    let comp = [
+                        lp + (l1 - lp) * dd(0, 0),
+                        (l1 - lp) * dd(0, 1),
+                        (l1 - lp) * dd(0, 2),
+                        lp + (l1 - lp) * dd(1, 1),
+                        (l1 - lp) * dd(1, 2),
+                        lp + (l1 - lp) * dd(2, 2),
+                    ];
+                    for (k, c) in comp.iter().enumerate() {
+                        tensor[(vox, 0, 0, k)] = *c as f32;
+                    }
+                }
+                1 => {
+                    fa[(vox, 0, 0)] = 0.05;
+                    md[(vox, 0, 0)] = 3.0e-3;
+                    for k in [0, 3, 5] {
+                        tensor[(vox, 0, 0, k)] = 3.0e-3;
+                    }
+                }
+                _ => {
+                    fa[(vox, 0, 0)] = 0.15;
+                    md[(vox, 0, 0)] = 1.2e-3;
+                    for k in [0, 3, 5] {
+                        tensor[(vox, 0, 0, k)] = 1.2e-3;
+                    }
+                }
+            }
+            pdir[(vox, 0, 0, 0)] = d[0] as f32;
+            pdir[(vox, 0, 0, 1)] = d[1] as f32;
+            pdir[(vox, 0, 0, 2)] = d[2] as f32;
+        }
+
+        let dwi = DwiData::from_table(
+            data,
+            mask,
+            gtab,
+            BvecFrame::WorldRas,
+            std::path::PathBuf::from("synthetic.nii.gz"),
+        );
+        let dti = DtiVolumeResult {
+            s0: s0v.clone(),
+            fa,
+            md,
+            outlier_fraction: Array3::zeros((n_vox, 1, 1)),
+            tensor,
+            principal_dir: pdir,
+            iterations: None,
+            converged: None,
+        };
+        let _ = &mut s0v;
+
+        let cfg = ConshResponseConfig {
+            dhollander: DhollanderConfig {
+                md_csf_pct: 15.0,
+                // These fixtures plant one tissue per voxel in a 40-voxel strip,
+                // which the staged selection's mask erosion would wipe out. They
+                // exercise the response SCALING, so pin them to the selection the
+                // planting was designed for.
+                legacy_selection: true,
+                ..Default::default()
+            },
+            step: 50.0,
+            sigma_b: 80.0,
+            min_weight_frac: 0.02,
+            grid_bmax: None,
+            ..Default::default()
+        };
+        let (resp, diag) = estimate_consh_responses(&dwi, &dti, &cfg).unwrap();
+
+        assert_eq!(diag.n_wm_voxels, 8, "should select the 8 planted WM voxels");
+        assert_eq!(diag.n_csf_voxels, 6);
+        // WM response at grid b=1000 (index 20) recovers the planted r_ℓ(1000).
+        let expect = r_true(1000.0);
+        let row = &resp.wm.coeffs[20];
+        for j in 0..3 {
+            assert_abs_diff_eq!(row[j], expect[j], epsilon = 3e-2);
+        }
+        // b=0 row is isotropic; every voxel here shares b0=1000, so mean =
+        // median = ref and the anchor is exactly √4π. (With heterogeneous b0
+        // it is only approximate — see the common-reference tests below.)
+        assert_abs_diff_eq!(resp.wm.coeffs[0][0], (4.0 * PI).sqrt(), epsilon = 1e-9);
+        assert_abs_diff_eq!(resp.wm.coeffs[0][1], 0.0, epsilon = 1e-12);
+        // CSF at b=1000 ≈ exp(-3e-3·1000)=0.0498 → iso coeff = that · sqrt(4π).
+        assert_abs_diff_eq!(
+            resp.csf.coeffs[20][0],
+            (-3.0e-3 * 1000.0_f64).exp() * (4.0 * PI).sqrt(),
+            epsilon = 2e-2
+        );
+    }
+    fn synthetic_scan(
+        s0_wm: &[f64; 8],
+        s0_csf: f64,
+        s0_gm: f64,
+        gain: f64,
+    ) -> (crate::io::dwi::DwiData, crate::dti::DtiVolumeResult) {
+        use crate::io::dwi::DwiData;
+        use crate::dti::DtiVolumeResult;
+        use crate::qspace::{BvecFrame, GradientTable};
+        use ndarray::{Array3, Array4};
+
+        let sphere = odx_rs::formats::dsistudio_odf8::hemisphere_vertices_ras();
+        let dirs: Vec<[f64; 3]> = sphere
+            .iter()
+            .step_by((sphere.len() / 30).max(1))
+            .take(30)
+            .map(|v| [v[0] as f64, v[1] as f64, v[2] as f64])
+            .collect();
+        let mut bvals = vec![0.0; 6];
+        let mut bvecs: Vec<[f64; 3]> = vec![[0.0; 3]; 6];
+        for &b in &[1000.0, 2000.0, 3000.0] {
+            for d in &dirs {
+                bvals.push(b);
+                bvecs.push(*d);
+            }
+        }
+        let gtab =
+            GradientTable::new(bvals.clone(), bvecs.clone(), Some(0.043), Some(0.011), None)
+                .unwrap();
+        let ng = gtab.n_grads();
+
+        let r_true = |b: f64| -> [f64; 3] {
+            let e = (-0.7e-3 * b).exp();
+            [e, -0.35 * e, 0.12 * e]
+        };
+        let ylm0 =
+            |l: usize, c: f64| ((2.0 * l as f64 + 1.0) / (4.0 * PI)).sqrt() * legendre(l, c);
+
+        let n_vox = 40;
+        let mut data = Array4::<f32>::zeros((n_vox, 1, 1, ng));
+        let mask = Array3::<bool>::from_elem((n_vox, 1, 1), true);
+        let mut fa = Array3::<f32>::zeros((n_vox, 1, 1));
+        let mut md = Array3::<f32>::zeros((n_vox, 1, 1));
+        let mut tensor = Array4::<f32>::zeros((n_vox, 1, 1, 6));
+        let mut pdir = Array4::<f32>::zeros((n_vox, 1, 1, 3));
+
+        let wm_fibers = [
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.577, 0.577, 0.577],
+            [0.707, 0.707, 0.0],
+            [0.0, 0.707, 0.707],
+            [0.707, 0.0, 0.707],
+            [0.267, 0.535, 0.802],
+        ];
+        for vox in 0..n_vox {
+            let (class, dir, s0): (u8, [f64; 3], f64) = if vox < 8 {
+                (0u8, wm_fibers[vox], s0_wm[vox])
+            } else if vox < 14 {
+                (1u8, [0.0, 0.0, 1.0], s0_csf)
+            } else {
+                (2u8, [0.0, 0.0, 1.0], s0_gm)
+            };
+            let d = unit(dir);
+            for i in 0..6 {
+                data[(vox, 0, 0, i)] = (gain * s0) as f32;
+            }
+            for i in 6..ng {
+                let b = bvals[i];
+                let g = bvecs[i];
+                let val = match class {
+                    0 => {
+                        let cos = g[0] * d[0] + g[1] * d[1] + g[2] * d[2];
+                        let r = r_true(b);
+                        s0 * (0..3).map(|j| r[j] * ylm0(2 * j, cos)).sum::<f64>()
+                    }
+                    1 => s0 * (-3.0e-3 * b).exp(),
+                    _ => s0 * (-1.2e-3 * b).exp(),
+                };
+                data[(vox, 0, 0, i)] = (gain * val) as f32;
+            }
+            match class {
+                0 => {
+                    fa[(vox, 0, 0)] = 0.8;
+                    md[(vox, 0, 0)] = 0.77e-3;
+                    let (l1, lp) = (1.7e-3_f64, 0.3e-3_f64);
+                    let dd = |a: usize, b: usize| d[a] * d[b];
+                    let comp = [
+                        lp + (l1 - lp) * dd(0, 0),
+                        (l1 - lp) * dd(0, 1),
+                        (l1 - lp) * dd(0, 2),
+                        lp + (l1 - lp) * dd(1, 1),
+                        (l1 - lp) * dd(1, 2),
+                        lp + (l1 - lp) * dd(2, 2),
+                    ];
+                    for (k, c) in comp.iter().enumerate() {
+                        tensor[(vox, 0, 0, k)] = *c as f32;
+                    }
+                }
+                1 => {
+                    fa[(vox, 0, 0)] = 0.05;
+                    md[(vox, 0, 0)] = 3.0e-3;
+                    for k in [0, 3, 5] {
+                        tensor[(vox, 0, 0, k)] = 3.0e-3;
+                    }
+                }
+                _ => {
+                    fa[(vox, 0, 0)] = 0.15;
+                    md[(vox, 0, 0)] = 1.2e-3;
+                    for k in [0, 3, 5] {
+                        tensor[(vox, 0, 0, k)] = 1.2e-3;
+                    }
+                }
+            }
+            pdir[(vox, 0, 0, 0)] = d[0] as f32;
+            pdir[(vox, 0, 0, 1)] = d[1] as f32;
+            pdir[(vox, 0, 0, 2)] = d[2] as f32;
+        }
+
+        let dwi = DwiData::from_table(
+            data,
+            mask,
+            gtab,
+            BvecFrame::WorldRas,
+            std::path::PathBuf::from("synthetic.nii.gz"),
+        );
+        let dti = DtiVolumeResult {
+            s0: Array3::from_elem((n_vox, 1, 1), 1000.0),
+            fa,
+            md,
+            outlier_fraction: Array3::zeros((n_vox, 1, 1)),
+            tensor,
+            principal_dir: pdir,
+            iterations: None,
+            converged: None,
+        };
+        (dwi, dti)
+    }
+    fn test_cfg() -> ConshResponseConfig {
+        ConshResponseConfig {
+            dhollander: DhollanderConfig {
+                md_csf_pct: 15.0,
+                // These fixtures plant one tissue per voxel in a 40-voxel strip,
+                // which the staged selection's mask erosion would wipe out. They
+                // exercise the response SCALING, so pin them to the selection the
+                // planting was designed for.
+                legacy_selection: true,
+                ..Default::default()
+            },
+            step: 50.0,
+            sigma_b: 80.0,
+            min_weight_frac: 0.02,
+            grid_bmax: None,
+            ..Default::default()
+        }
+    }
+    fn common_reference_scaling_is_gain_free() {
+        // A global receiver-gain change must cancel in S/ref exactly: the two
+        // scans differ only by ×3.7 on every sample, so every response
+        // coefficient must agree (up to f32 storage rounding).
+        let (dwi_a, dti_a) = synthetic_scan(&[1000.0; 8], 2600.0, 800.0, 1.0);
+        let (dwi_b, dti_b) = synthetic_scan(&[1000.0; 8], 2600.0, 800.0, 3.7);
+        let (ra, _) = estimate_consh_responses(&dwi_a, &dti_a, &test_cfg()).unwrap();
+        let (rb, _) = estimate_consh_responses(&dwi_b, &dti_b, &test_cfg()).unwrap();
+        for (a, b) in [(&ra.wm, &rb.wm), (&ra.gm, &rb.gm), (&ra.csf, &rb.csf)] {
+            for (row_a, row_b) in a.coeffs.iter().zip(&b.coeffs) {
+                for (ca, cb) in row_a.iter().zip(row_b) {
+                    assert_abs_diff_eq!(ca, cb, epsilon = 1e-5);
+                }
+            }
+        }
+    }
+    fn dki_estimator_recovers_planted_isotropic_decays_and_scaling() {
+        // GM/CSF are mono-exponential, so DKI ISO + offset represents them
+        // exactly; the common-reference b=0 amplitudes (CSF 2.6×, GM 0.8×)
+        // must survive as S0 + C. WM's planted response is not DKI-shaped, so
+        // it is only checked loosely, plus the fitted-parameter diagnostics.
+        let factor = (4.0 * PI).sqrt();
+        let (dwi, dti) = synthetic_scan(&[1000.0; 8], 2600.0, 800.0, 1.0);
+        let cfg = ConshResponseConfig { estimator: ResponseEstimator::Dki, ..test_cfg() };
+        let (resp, diag) = estimate_consh_responses(&dwi, &dti, &cfg).unwrap();
+
+        let fits = diag.dki.expect("Dki estimator reports its fits");
+        assert_eq!(fits.wm.params.n_params(), 7);
+        assert_eq!(fits.gm.params.n_params(), 4);
+        assert!(fits.wm.converged && fits.gm.converged && fits.csf.converged);
+        assert_abs_diff_eq!(fits.csf.params.d_par, 3.0, epsilon = 1e-3);
+        assert_abs_diff_eq!(fits.gm.params.d_par, 1.2, epsilon = 1e-3);
+
+        assert_abs_diff_eq!(resp.csf.coeffs[0][0], 2.6 * factor, epsilon = 1e-3);
+        assert_abs_diff_eq!(resp.gm.coeffs[0][0], 0.8 * factor, epsilon = 1e-3);
+        for (k, &b) in resp_grid_bs(&resp).iter().enumerate() {
+            assert_abs_diff_eq!(resp.csf.coeffs[k][0], 2.6 * (-3.0e-3 * b).exp() * factor, epsilon = 1e-3);
+            assert_abs_diff_eq!(resp.gm.coeffs[k][0], 0.8 * (-1.2e-3 * b).exp() * factor, epsilon = 1e-3);
+        }
+        // WM: b=0 row isotropic at the reference, b=1000 row near the planted one.
+        assert_abs_diff_eq!(resp.wm.coeffs[0][0], factor, epsilon = 1e-2);
+        let expect = [(-0.7_f64).exp(), -0.35 * (-0.7_f64).exp(), 0.12 * (-0.7_f64).exp()];
+        for j in 0..3 {
+            assert_abs_diff_eq!(resp.wm.coeffs[20][j], expect[j], epsilon = 5e-2);
+        }
+        // Monotone spherical mean on every row, including past the data.
+        for k in 1..resp.wm.coeffs.len() {
+            assert!(resp.wm.coeffs[k][0] <= resp.wm.coeffs[k - 1][0] + 1e-9);
+        }
+    }
+
+    /// Grid b-values of a dense-b response estimated with `test_cfg()` (step 50).
+    fn resp_grid_bs(resp: &ConshResponses) -> Vec<f64> {
+        (0..resp.csf.coeffs.len()).map(|k| 50.0 * k as f64).collect()
     }
 }
