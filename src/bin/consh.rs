@@ -19,21 +19,26 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use cs_dmri::dti::{DtiFitConfig, RestoreConfig, fit_volume_restore_graddev};
+use std::sync::RwLock;
+
+use cs_dmri::dti::RestoreConfig;
 use cs_dmri::graddev::VoxelGradDev;
 use cs_dmri::io::output::{sibling_path, write_3d_u32_as_f32, write_3d_u8, write_4d_f32};
-use cs_dmri::io::dwi::{load_dwi, load_dwi_mrtrix_grad};
+use cs_dmri::io::dwi::{DwiData, load_dwi, load_dwi_mrtrix_grad, load_mask};
 use cs_dmri::io::odx_out::{
     ContinuousBQuantMeta, GeneratedBy, ReferenceB0Source, write_continuous_b_odx,
 };
-use cs_dmri::multitissue::consh::{ConshConfig, ConshResponses, DenseBGrid, fit_volume_consh_graddev};
-use cs_dmri::multitissue::mtnormalise::{
-    MtnormaliseConfig, mtnormalise, target_sum_mrtrix_default,
+use cs_dmri::multitissue::consh::{ConshConfig, ConshResponses};
+use cs_dmri::multitissue::consh_pipeline::{
+    ConshPipelineConfig, ConshPipelineResult, ConshResponseSource, REFERENCE_WM_FRACTION,
+    consh_pipeline,
 };
+use cs_dmri::multitissue::pipeline::{PipelineObserver, PipelineStage};
+use cs_dmri::multitissue::mtnormalise::{MtnormaliseConfig, target_sum_mrtrix_default};
 use cs_dmri::multitissue::response::TissueResponse;
 use cs_dmri::multitissue::response_estimation::{
     ConshResponseConfig, DhollanderConfig, DhollanderSelectConfig, ResponseEstimator,
-    estimate_consh_responses_graddev, write_response_txt,
+    write_response_txt,
 };
 use cs_dmri::multitissue::response_smooth::SmoothResponseConfig;
 use cs_dmri::qspace::{BvecFrame, TORTOISE_DEFAULT_GMAX};
@@ -380,103 +385,159 @@ impl From<GraddevIdentity> for odx_rs::IdentityPolicy {
     }
 }
 
-/// Median b=0 within a white-matter mask — the `DWI_ref` of QST Eq. (4).
-///
-/// Mirrors mrtrix3's `dwinormalise`, which normalizes "the median b=0 white
-/// matter value". The median (not mean) is deliberate: it matches mrtrix3's
-/// `mrstats -output median` and resists the bright outliers that a mean over a
-/// mask picks up at vessels or mis-segmented edges.
-fn compute_reference_b0(
-    dwi: &cs_dmri::io::dwi::DwiData,
-    reference_mask: Option<&std::path::Path>,
-    wm_single_fiber_median: Option<f64>,
-    result: &cs_dmri::multitissue::consh::ConshVolumeResult,
+struct StageProgress {
+    current: RwLock<Option<Heartbeat>>,
+    mask_voxels: usize,
+    interval: Duration,
     quiet: bool,
-) -> Result<Option<(f64, ReferenceB0Source)>> {
-    let s = dwi.data.shape();
-    let (nx, ny, nz, nt) = (s[0], s[1], s[2], s[3]);
-    let b0: Vec<usize> =
-        (0..nt).filter(|&i| dwi.gtab.bvals[i] <= dwi.gtab.b0_threshold).collect();
-    if b0.is_empty() {
-        return Ok(None);
-    }
-    let mean_b0 = |x: usize, y: usize, z: usize| -> f64 {
-        b0.iter().map(|&i| dwi.data[(x, y, z, i)] as f64).sum::<f64>() / b0.len() as f64
-    };
-    let median = |mut v: Vec<f64>| -> Option<f64> {
-        if v.is_empty() {
-            return None;
-        }
-        let mid = v.len() / 2;
-        v.select_nth_unstable_by(mid, f64::total_cmp);
-        Some(v[mid])
-    };
+    noise_floor: bool,
+}
 
-    // 1. Explicit mask — matches `dwinormalise individual` exactly.
-    if let Some(path) = reference_mask {
-        let m = cs_dmri::io::dwi::load_mask(path, [nx, ny, nz])
-            .with_context(|| format!("read reference mask {:?}", path))?;
-        let vals: Vec<f64> = (0..nx)
-            .flat_map(|x| (0..ny).flat_map(move |y| (0..nz).map(move |z| (x, y, z))))
-            .filter(|&(x, y, z)| m[(x, y, z)])
-            .map(|(x, y, z)| mean_b0(x, y, z))
-            .filter(|v| *v > 0.0)
-            .collect();
-        if let Some(v) = median(vals) {
-            if !quiet {
-                eprintln!("[consh]   DWI_ref = {v:.1} (median b=0 in supplied reference mask)");
-            }
-            return Ok(Some((v, ReferenceB0Source::UserMask)));
+impl StageProgress {
+    fn finish_current(&self) {
+        if let Some(hb) = self.current.write().unwrap().take() {
+            hb.finish();
         }
     }
+}
 
-    // 2. Dhollander single-fiber WM voxels, when the response was estimated here.
-    if let Some(v) = wm_single_fiber_median {
-        if v > 0.0 {
-            if !quiet {
-                eprintln!("[consh]   DWI_ref = {v:.1} (median b=0 in WM single-fiber voxels)");
+impl PipelineObserver for StageProgress {
+    fn stage(&self, stage: PipelineStage) {
+        self.finish_current();
+        let (banner, label) = match stage {
+            PipelineStage::Dti => (
+                Some("stage 1/3: RESTORE tensor fit and dense-b response estimation".to_string()),
+                Some("dti"),
+            ),
+            PipelineStage::Consh => (
+                Some(format!(
+                    "stage 2/3: continuous-b multi-tissue fit ({} per voxel)",
+                    if self.noise_floor { "3 tissues and a noise floor" } else { "3 tissues" }
+                )),
+                Some("consh"),
+            ),
+            PipelineStage::Normalize => {
+                (Some("stage 3/3: mtnormalise (polynomial bias-field correction)".to_string()), None)
             }
-            return Ok(Some((v, ReferenceB0Source::WhiteMatterSingleFibre)));
+            PipelineStage::ResponseEstimation | PipelineStage::Ss3t => (None, None),
+        };
+        if let (Some(b), false) = (banner, self.quiet) {
+            eprintln!("[consh] {b}");
+        }
+        if let Some(label) = label {
+            *self.current.write().unwrap() =
+                Some(Heartbeat::new(label, self.mask_voxels, self.interval, self.quiet));
         }
     }
 
-    // 3. WM-fraction mask from the fit itself. No DTI, so no FA — this is the
-    //    only WM definition available under `--read-responses-from`.
-    const WM_FRACTION_THRESHOLD: f64 = 0.7;
-    let mut vals = Vec::new();
-    for x in 0..nx {
-        for y in 0..ny {
-            for z in 0..nz {
-                if !dwi.mask[(x, y, z)] {
-                    continue;
-                }
-                let wm = result.wm[(x, y, z, 0)] as f64;
-                let gm = result.gm[(x, y, z, 0)] as f64;
-                let csf = result.csf[(x, y, z, 0)] as f64;
-                let sum = wm + gm + csf;
-                if sum <= 1e-9 || wm / sum < WM_FRACTION_THRESHOLD {
-                    continue;
-                }
-                let v = mean_b0(x, y, z);
-                if v > 0.0 {
-                    vals.push(v);
-                }
-            }
+    fn voxel(&self) {
+        if let Some(hb) = self.current.read().unwrap().as_ref() {
+            hb.tick();
         }
     }
-    let n = vals.len();
-    if let Some(v) = median(vals) {
-        if !quiet {
+}
+
+/// Summary of a pipeline run on stderr.
+fn report(args: &Cli, dwi: &DwiData, mask_voxels: usize, out: &ConshPipelineResult) {
+    if let (Some(path), Some(bmax_eff)) = (&args.graddev, out.grid_bmax) {
+        let bmax = dwi.gtab.bvals.iter().cloned().fold(0.0_f64, f64::max);
+        eprintln!(
+            "[consh] graddev: {}; effective maximum b {bmax_eff:.0} (nominal {bmax:.0}), \
+             95th percentile |b_eff - b| {:.0}",
+            path.display(),
+            out.b_shift_p95.unwrap_or(0.0),
+        );
+    }
+    if let Some(estimator) = out.estimator {
+        eprintln!("[consh]   response estimator: {estimator:?}");
+    }
+    if let Some((rdiag, _)) = &out.estimate {
+        eprintln!(
+            "[consh]   tissue voxels: WM={} ({:.1}%)  GM={}  CSF={}   dense-b grid rows: {}",
+            rdiag.n_wm_voxels,
+            100.0 * rdiag.n_wm_voxels as f64 / rdiag.n_brain_voxels.max(1) as f64,
+            rdiag.n_gm_voxels,
+            rdiag.n_csf_voxels,
+            out.responses.wm.n_shells(),
+        );
+        if let Some(st) = rdiag.stages {
             eprintln!(
-                "[consh]   DWI_ref = {v:.1} (median b=0 over {n} voxels with WM fraction > {WM_FRACTION_THRESHOLD})"
+                "[consh]   dhollander stages: mask {} → eroded {} → safe {}; \
+                 crude WM/GM/CSF {}/{}/{}; refined {}/{}/{}",
+                st.mask,
+                st.eroded,
+                st.safe,
+                st.crude_wm,
+                st.crude_gm,
+                st.crude_csf,
+                st.refined_wm,
+                st.refined_gm,
+                st.refined_csf,
             );
         }
-        return Ok(Some((v, ReferenceB0Source::WhiteMatterFraction)));
+        if let Some(fits) = &rdiag.dki {
+            for (name, f) in [("WM", &fits.wm), ("GM", &fits.gm), ("CSF", &fits.csf)] {
+                let p = &f.params;
+                let shape = if p.isotropic {
+                    format!("D={:.4} W={:.5}", p.d_par, p.w[0])
+                } else {
+                    format!(
+                        "D∥={:.4} D⊥={:.4} W=[{:.5}, {:.5}, {:.5}]",
+                        p.d_par, p.d_perp, p.w[0], p.w[1], p.w[2]
+                    )
+                };
+                eprintln!(
+                    "[consh]   DKI {name:<3} S0={:.4} {shape} C={:.5}  (µm²/ms)  \
+                     RMSR={:.5} AIC={:.1} n={} iters={}{}",
+                    p.s0,
+                    p.offset,
+                    f.rmsr,
+                    f.aic,
+                    f.n_samples,
+                    f.iterations,
+                    if f.converged { "" } else { " (not converged)" },
+                );
+            }
+        }
+    } else {
+        let r = &out.responses;
+        eprintln!(
+            "[consh]   responses read from disk: WM lmax={} ({} rows), GM {} rows, CSF {} rows",
+            r.wm.lmax,
+            r.wm.n_shells(),
+            r.gm.n_shells(),
+            r.csf.n_shells()
+        );
     }
-    if !quiet {
-        eprintln!("[consh]   WARNING: no white-matter voxels found; DWI_ref omitted from sidecar");
+    if let Some(conv) = &out.fit.converged {
+        let n_conv = conv.iter().filter(|&&c| c == 1).count();
+        eprintln!("[consh]   solver converged in {n_conv}/{mask_voxels} masked voxels");
     }
-    Ok(None)
+    if let Some(diag) = &out.normalization {
+        eprintln!(
+            "[consh]   balance factors{}: b_WM={:.4}  b_GM={:.4}  b_CSF={:.4}",
+            if args.mtnorm_balanced { " (applied to output)" } else { "" },
+            diag.tissue_scales[0],
+            diag.tissue_scales[1],
+            diag.tissue_scales[2]
+        );
+        eprintln!(
+            "[consh]   target_sum={:.4}  lognorm_scale={:.4e}  fit voxels={}  mean |log residual|={:.3e}",
+            diag.target_sum_used, diag.lognorm_scale, diag.n_fit_voxels, diag.mean_abs_log_residual
+        );
+    } else {
+        eprintln!("[consh] stage 3/3: skipped (--no-normalize)");
+    }
+    if let Some((v, source)) = out.reference_b0 {
+        let from = match source {
+            ReferenceB0Source::UserMask => "the reference mask".to_string(),
+            ReferenceB0Source::WhiteMatterSingleFibre => "single-fiber WM voxels".to_string(),
+            ReferenceB0Source::WhiteMatterFraction => {
+                format!("voxels with WM fraction ≥ {REFERENCE_WM_FRACTION}")
+            }
+        };
+        eprintln!("[consh]   DWI_ref = {v:.1} (median b=0 in {from})");
+    }
 }
 
 fn main() -> Result<()> {
@@ -531,10 +592,7 @@ fn main() -> Result<()> {
             dwi.gtab.shells(50.0).len()
         );
     }
-    let interval = Duration::from_secs(args.progress_interval_secs.max(1));
 
-    // Gradient nonlinearity: per-voxel effective tables, and a dense-b grid
-    // reaching the largest effective b (both the responses and the fit use it).
     let graddev = match &args.graddev {
         Some(path) => Some(
             VoxelGradDev::load(path, args.graddev_identity.into(), &dwi)
@@ -542,301 +600,96 @@ fn main() -> Result<()> {
         ),
         None => None,
     };
-    let grid_bmax = graddev.as_ref().map(|gd| gd.max_effective_b(&dwi, &dwi.mask));
-    let b_interp = args.b_interp || graddev.is_some();
-    // How far the field moves b off the acquired values. The kernel estimator
-    // already averages each row over about ±--sigma-b, so shifts inside that
-    // window are within its resolution (a Prisma-class whole-body coil: p95 of a
-    // few tens of s/mm²); only beyond it (strong-gradient systems: hundreds) do
-    // its rows misdescribe the effective b-values, and the smooth estimator is
-    // needed. Measured on TRXScan sims and MBP Prisma fields.
-    let b_shift_p95 = graddev.as_ref().map(|gd| gd.b_shift_quantile(&dwi, &dwi.mask, 0.95));
-    let estimator = match args.response_estimator {
-        EstimatorChoice::Kernel => ResponseEstimator::Kernel,
-        EstimatorChoice::Smooth => ResponseEstimator::Smooth,
-        EstimatorChoice::Dki => ResponseEstimator::Dki,
-        EstimatorChoice::Auto => match b_shift_p95 {
-            Some(shift) if shift > args.sigma_b => ResponseEstimator::Smooth,
-            Some(_) => ResponseEstimator::Kernel,
-            None if b_interp => ResponseEstimator::Smooth,
-            None => ResponseEstimator::Kernel,
+    let reference_mask = match &args.reference_mask {
+        Some(path) => {
+            let s = dwi.data.shape();
+            Some(
+                load_mask(path, [s[0], s[1], s[2]])
+                    .with_context(|| format!("read reference mask {:?}", path))?,
+            )
+        }
+        None => None,
+    };
+
+    let responses = match &args.read_responses_from {
+        Some(dir) => {
+            let read = |tissue: &str| {
+                let path = dir.join(format!("{tissue}_response_denseb.txt"));
+                TissueResponse::parse_mrtrix_txt(&path)
+                    .with_context(|| format!("read {tissue} response from {}", path.display()))
+            };
+            ConshResponseSource::Provided(ConshResponses {
+                wm: read("wm")?,
+                gm: read("gm")?,
+                csf: read("csf")?,
+            })
+        }
+        None => ConshResponseSource::Estimate {
+            restore: RestoreConfig {
+                max_iter: args.restore_max_iter,
+                tol: args.restore_tol,
+                ..RestoreConfig::default()
+            },
+            responses: ConshResponseConfig {
+                dhollander: DhollanderConfig {
+                    fa_wm_threshold: args.fa_wm_threshold,
+                    fiber_dominance_ratio: args.fiber_dominance_ratio,
+                    md_csf_pct: args.md_csf_pct,
+                    lmax_wm: args.lmax_wm,
+                    legacy_selection: args.legacy_tissue_selection,
+                    stages: DhollanderSelectConfig {
+                        erode: args.dh_erode,
+                        fa: args.dh_fa,
+                        sfwm_pct: args.dh_sfwm,
+                        gm_pct: args.dh_gm,
+                        csf_pct: args.dh_csf,
+                        ..DhollanderSelectConfig::default()
+                    },
+                },
+                step: args.step,
+                sigma_b: args.sigma_b,
+                smooth: SmoothResponseConfig {
+                    smoothing_b: args.sigma_b,
+                    ..SmoothResponseConfig::default()
+                },
+                ..ConshResponseConfig::default()
+            },
         },
     };
-    if let (Some(gd), Some(bmax_eff)) = (&graddev, grid_bmax) {
-        if !args.quiet {
-            let deviated = dwi
-                .mask
-                .indexed_iter()
-                .filter(|&((x, y, z), &m)| m && !gd.is_identity(x, y, z))
-                .count();
-            let bmax = dwi.gtab.bvals.iter().cloned().fold(0.0_f64, f64::max);
-            eprintln!(
-                "[consh] graddev: {} ({}), {deviated}/{mask_voxels} masked voxels deviated; \
-                 effective bmax {bmax_eff:.0} (nominal {bmax:.0}), p95 |b_eff - b| {:.0}",
-                args.graddev.as_ref().unwrap().display(),
-                if gd.identity_added() { "T - I + identity" } else { "T" },
-                b_shift_p95.unwrap_or(0.0),
-            );
-        }
-    }
-
-    // ---- Stage 1/3: dense-b responses (READ a fixed set, or estimate) ----
-    // Default: RESTORE DTI → Dhollander tissue selection → moving-shell fit.
-    // With `--read-responses-from`, load a previously written response instead,
-    // skipping DTI + estimation entirely so the kernel is identical across
-    // scans (the response-vs-reconstruction isolation experiment).
-    // Median b=0 over the WM single-fiber voxels — the per-scan `DWI_ref` recorded
-    // in the ODX sidecar. Only available on the estimation path; a response read
-    // from disk carries no per-scan tissue selection.
-    let mut wm_b0_median: Option<f64> = None;
-    let responses = if let Some(dir) = &args.read_responses_from {
-        if !args.quiet {
-            eprintln!(
-                "[consh] stage 1/3: reading FIXED dense-b responses from {} (skipping DTI + estimation)",
-                dir.display()
-            );
-        }
-        let wm = TissueResponse::parse_mrtrix_txt(&dir.join("wm_response_denseb.txt"))
-            .with_context(|| format!("read WM response from {}", dir.display()))?;
-        let gm = TissueResponse::parse_mrtrix_txt(&dir.join("gm_response_denseb.txt"))
-            .with_context(|| format!("read GM response from {}", dir.display()))?;
-        let csf = TissueResponse::parse_mrtrix_txt(&dir.join("csf_response_denseb.txt"))
-            .with_context(|| format!("read CSF response from {}", dir.display()))?;
-        if !args.quiet {
-            eprintln!(
-                "[consh]   fixed responses: WM lmax={} ({} rows)  GM {} rows  CSF {} rows",
-                wm.lmax,
-                wm.n_shells(),
-                gm.n_shells(),
-                csf.n_shells()
-            );
-        }
-        // Row-count / grid compatibility is validated in `ConshMsmtPlan::build`
-        // (errors clearly if the response grid doesn't match this DWI's bmax+step).
-        // Under --graddev the grid reaches the effective bmax, which a response
-        // written from a run without it does not cover: say so here, plainly.
-        if graddev.is_some() {
-            let need = DenseBGrid::for_gtab_min_bmax(&dwi.gtab, args.step, grid_bmax).len();
-            if [wm.n_shells(), gm.n_shells(), csf.n_shells()].iter().any(|&n| n < need) {
-                anyhow::bail!(
-                    "--graddev raises the effective bmax to {:.0}, so the dense-b grid needs {need} \
-                     rows, but the responses in {} have {}/{}/{} (WM/GM/CSF). Responses must cover \
-                     the effective b range: estimate them in this run, or write them from a \
-                     --graddev run with --write-responses-to.",
-                    grid_bmax.unwrap_or(0.0),
-                    dir.display(),
-                    wm.n_shells(),
-                    gm.n_shells(),
-                    csf.n_shells()
-                );
-            }
-        }
-        ConshResponses { wm, gm, csf }
-    } else {
-        if !args.quiet {
-            eprintln!("[consh] stage 1/3: RESTORE DTI + dense-b response estimation");
-        }
-        let restore_cfg = RestoreConfig {
-            max_iter: args.restore_max_iter,
-            tol: args.restore_tol,
-            ..RestoreConfig::default()
-        };
-        let dti_hb = Heartbeat::new("dti", mask_voxels, interval, args.quiet);
-        let dti = fit_volume_restore_graddev(
-            &dwi,
-            &restore_cfg,
-            DtiFitConfig { compute_diagnostics: false },
-            graddev.as_ref(),
-            || dti_hb.tick(),
-        )
-        .with_context(|| "DTI fit failed")?;
-        dti_hb.finish();
-
-        let resp_cfg = ConshResponseConfig {
-            dhollander: DhollanderConfig {
-                fa_wm_threshold: args.fa_wm_threshold,
-                fiber_dominance_ratio: args.fiber_dominance_ratio,
-                md_csf_pct: args.md_csf_pct,
-                lmax_wm: args.lmax_wm,
-                legacy_selection: args.legacy_tissue_selection,
-                stages: DhollanderSelectConfig {
-                    erode: args.dh_erode,
-                    fa: args.dh_fa,
-                    sfwm_pct: args.dh_sfwm,
-                    gm_pct: args.dh_gm,
-                    csf_pct: args.dh_csf,
-                    ..DhollanderSelectConfig::default()
-                },
-            },
-            step: args.step,
-            sigma_b: args.sigma_b,
-            grid_bmax,
-            estimator,
-            smooth: SmoothResponseConfig {
-                smoothing_b: args.sigma_b,
-                ..SmoothResponseConfig::default()
-            },
-            ..ConshResponseConfig::default()
-        };
-        if !args.quiet {
-            eprintln!("[consh]   response estimator: {estimator:?}");
-        }
-        let (responses, rdiag) = estimate_consh_responses_graddev(&dwi, &dti, &resp_cfg, graddev.as_ref())
-            .with_context(|| "continuous-b response estimation failed")?;
-        if !args.quiet {
-            eprintln!(
-                "[consh]   tissue voxels: WM={} ({:.1}%)  GM={}  CSF={}   dense-b grid points: {}",
-                rdiag.n_wm_voxels,
-                100.0 * rdiag.n_wm_voxels as f64 / rdiag.n_brain_voxels.max(1) as f64,
-                rdiag.n_gm_voxels,
-                rdiag.n_csf_voxels,
-                responses.wm.n_shells(),
-            );
-            if let Some(st) = rdiag.stages {
-                eprintln!(
-                    "[consh]   dhollander stages: mask {} → eroded {} → safe {}; \
-                     crude WM/GM/CSF {}/{}/{}; refined {}/{}/{}",
-                    st.mask,
-                    st.eroded,
-                    st.safe,
-                    st.crude_wm,
-                    st.crude_gm,
-                    st.crude_csf,
-                    st.refined_wm,
-                    st.refined_gm,
-                    st.refined_csf,
-                );
-            }
-            if let Some(fits) = &rdiag.dki {
-                for (name, f) in [("WM", &fits.wm), ("GM", &fits.gm), ("CSF", &fits.csf)] {
-                    let p = &f.params;
-                    let shape = if p.isotropic {
-                        format!("D={:.4} W={:.5}", p.d_par, p.w[0])
-                    } else {
-                        format!(
-                            "D∥={:.4} D⊥={:.4} W=[{:.5}, {:.5}, {:.5}]",
-                            p.d_par, p.d_perp, p.w[0], p.w[1], p.w[2]
-                        )
-                    };
-                    eprintln!(
-                        "[consh]   DKI {name:<3} S0={:.4} {shape} C={:.5}  (µm²/ms)  \
-                         RMSR={:.5} AIC={:.1} n={} iters={}{}",
-                        p.s0,
-                        p.offset,
-                        f.rmsr,
-                        f.aic,
-                        f.n_samples,
-                        f.iterations,
-                        if f.converged { "" } else { " (not converged)" },
-                    );
-                }
-            }
-        }
-        wm_b0_median = (rdiag.wm_b0_median > 0.0).then_some(rdiag.wm_b0_median);
-        if let Some(dir) = &args.write_responses_to {
-            std::fs::create_dir_all(dir).ok();
-            write_response_txt(&responses.wm, &dir.join("wm_response_denseb.txt"))?;
-            write_response_txt(&responses.gm, &dir.join("gm_response_denseb.txt"))?;
-            write_response_txt(&responses.csf, &dir.join("csf_response_denseb.txt"))?;
-            if !args.quiet {
-                eprintln!("[consh]   wrote dense-b responses → {}", dir.display());
-            }
-        }
-        responses
+    let estimator = match args.response_estimator {
+        EstimatorChoice::Auto => None,
+        EstimatorChoice::Kernel => Some(ResponseEstimator::Kernel),
+        EstimatorChoice::Smooth => Some(ResponseEstimator::Smooth),
+        EstimatorChoice::Dki => Some(ResponseEstimator::Dki),
     };
-
-    // ---- Stage 2/3: per-voxel continuous-b MSMT fit ----
-    if !args.quiet {
-        eprintln!(
-            "[consh] stage 2/3: continuous-b MSMT (joint {} ICLS per voxel)",
-            if args.no_noise_floor {
-                "3-tissue"
-            } else {
-                "3-tissue + noise-floor"
-            }
-        );
-    }
-    // Per-voxel L2-anchored ridge uses an internal ascending λ path (path[0]=0
-    // is the undamped reference); enabled when --wm-ridge-anchor > 0.
+    // The per-voxel penalty selection walks an internal ascending path whose
+    // first entry (0) is the unpenalized reference.
     let wm_ridge_path = if args.wm_ridge_anchor > 0.0 {
         if args.wm_ridge_relative {
-            vec![0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0] // relative fractions of HᵀH
+            vec![0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
         } else {
-            vec![0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0] // absolute
+            vec![0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0]
         }
     } else {
         Vec::new()
     };
-    let cfg = ConshConfig {
-        lmax_wm: args.lmax_wm,
-        step: args.step,
-        icls: IclsConfig { max_iter: args.icls_max_iter, ..IclsConfig::default() },
-        wm_l2_ridge: args.wm_ridge,
-        wm_ridge_path,
-        l2_anchor_slack: args.wm_ridge_anchor,
-        wm_ridge_relative: args.wm_ridge_relative,
-        fit_noise_floor: !args.no_noise_floor,
-        quantitative: args.quantitative,
-        b_interp,
-        grid_bmax,
-    };
-    if args.quantitative && !args.quiet {
-        eprintln!(
-            "[consh]   QUANTITATIVE (AFD) mode: fODFs rescaled to absolute signal units (x per-voxel S0)"
-        );
-        if args.read_responses_from.is_none() {
-            eprintln!(
-                "[consh]   WARNING: quantitative mode with a PER-SCAN response. One unit of AFD is \
-                 then defined relative to this scan's own response; for cross-subject comparison \
-                 pass a group-average response via --read-responses-from (see docs/quantitative-consh.md)."
-            );
-            if graddev.is_some() {
-                eprintln!(
-                    "[consh]   WARNING: quantitative mode with --graddev and a per-scan response. The \
-                     response estimator ({estimator:?}) follows the field strength, and the two \
-                     estimators' response shapes differ by a few percent — scans estimated \
-                     differently would carry an AFD offset tied to that choice. Use one group \
-                     kernel via --read-responses-from for every scan in a comparison."
-                );
-            }
-        }
-        if args.no_noise_floor {
-            eprintln!(
-                "[consh]   WARNING: --no-noise-floor with --quantitative. The S0 rescale suppresses \
-                 the MAGNITUDE of low-S0 fODF blowups but not their orientation content; the \
-                 noise-floor compartment is what stops WM absorbing the Rician floor."
-            );
-        }
-    }
-    let fit_hb = Heartbeat::new("consh", mask_voxels, interval, args.quiet);
-    let mut result = fit_volume_consh_graddev(
-        &dwi,
-        &responses,
-        &cfg,
-        graddev.as_ref(),
-        args.diagnostics,
-        || fit_hb.tick(),
-    )
-        .with_context(|| "continuous-b MSMT fit failed")?;
-    fit_hb.finish();
-    if !args.quiet {
-        if let Some(conv) = &result.converged {
-            let n_conv = conv.iter().filter(|&&c| c == 1).count();
-            eprintln!(
-                "[consh]   ICLS converged in {}/{} masked voxels",
-                n_conv, mask_voxels
-            );
-        }
-    }
-
-    // ---- Stage 3/3: mtnormalise (optional) ----
-    let mut mtnorm_target: Option<f64> = None;
-    let mut mtnorm_scale: Option<f64> = None;
-    if !args.no_normalize {
-        if !args.quiet {
-            eprintln!("[consh] stage 3/3: mtnormalise (polynomial bias-field correction)");
-        }
-        let mtcfg = MtnormaliseConfig {
+    let cfg = ConshPipelineConfig {
+        responses,
+        estimator,
+        consh: ConshConfig {
+            lmax_wm: args.lmax_wm,
+            step: args.step,
+            icls: IclsConfig { max_iter: args.icls_max_iter, ..IclsConfig::default() },
+            wm_l2_ridge: args.wm_ridge,
+            wm_ridge_path,
+            l2_anchor_slack: args.wm_ridge_anchor,
+            wm_ridge_relative: args.wm_ridge_relative,
+            fit_noise_floor: !args.no_noise_floor,
+            quantitative: args.quantitative,
+            b_interp: args.b_interp,
+            grid_bmax: None,
+        },
+        normalize: (!args.no_normalize).then(|| MtnormaliseConfig {
             poly_order: args.mtnorm_poly_order,
             target_sum: if args.mtnorm_target_median {
                 None
@@ -845,63 +698,56 @@ fn main() -> Result<()> {
             },
             apply_balance: args.mtnorm_balanced,
             ..MtnormaliseConfig::default()
-        };
-        let diag = mtnormalise(&mut result.wm, &mut result.gm, &mut result.csf, &dwi.mask, &mtcfg)
-            .with_context(|| "mtnormalise failed")?;
-        if !args.quiet {
-            eprintln!(
-                "[consh]   balance factors{}: b_WM={:.4}  b_GM={:.4}  b_CSF={:.4}",
-                if args.mtnorm_balanced { " (applied to output)" } else { "" },
-                diag.tissue_scales[0], diag.tissue_scales[1], diag.tissue_scales[2]
-            );
+        }),
+        compute_diagnostics: args.diagnostics,
+        reference_mask,
+    };
+    if !args.quiet {
+        if args.read_responses_from.is_some() {
+            eprintln!("[consh] stage 1/3: reading dense-b responses (no tensor fit or estimation)");
         }
-        // The noise floor is not a tissue, so it is excluded from mtnormalise's
-        // tissue sum — but it must still be divided by the same bias field, or it
-        // would no longer be comparable to the normalized gm/csf amplitudes.
-        if let Some(floor) = result.floor.as_mut() {
-            let s = dwi.mask.shape();
-            for x in 0..s[0] {
-                for y in 0..s[1] {
-                    for z in 0..s[2] {
-                        if dwi.mask[(x, y, z)] {
-                            let f = diag.bias_field[(x, y, z)];
-                            if f > 0.0 {
-                                floor[(x, y, z, 0)] /= f;
-                            }
-                        }
-                    }
-                }
-            }
+        if args.quantitative {
+            eprintln!("[consh]   fODFs in absolute signal units (scaled by each voxel's S0)");
         }
-        mtnorm_target = Some(diag.target_sum_used);
-        // Global-gain summary of the applied field: 1/lognorm_scale, the
-        // multiplier a typical (geometric-mean) inlier voxel received. The
-        // reciprocal of MRtrix3's `lognorm_scale` header entry.
-        mtnorm_scale = (diag.lognorm_scale > 0.0).then(|| 1.0 / diag.lognorm_scale);
-        if !args.quiet {
-            eprintln!(
-                "[consh]   target_sum={:.4}  lognorm_scale={:.4e}  fit voxels={}  mean |log residual|={:.3e}",
-                diag.target_sum_used,
-                diag.lognorm_scale,
-                diag.n_fit_voxels,
-                diag.mean_abs_log_residual
-            );
-        }
-    } else if !args.quiet {
-        eprintln!("[consh] stage 3/3: skipped (--no-normalize)");
     }
-
-    // ---- DWI_ref: median b=0 in white matter (mrtrix3 `dwinormalise`) ----
-    // Preference order mirrors how well the mask matches mrtrix3's: an explicit
-    // mask first, then the single-fiber WM voxels, then a WM-fraction mask
-    // derived from the fit itself (the only option when DTI was skipped).
-    let reference_b0 = compute_reference_b0(
-        &dwi,
-        args.reference_mask.as_deref(),
-        wm_b0_median,
-        &result,
-        args.quiet,
-    )?;
+    let progress = StageProgress {
+        current: RwLock::new(None),
+        mask_voxels,
+        interval: Duration::from_secs(args.progress_interval_secs.max(1)),
+        quiet: args.quiet,
+        noise_floor: !args.no_noise_floor,
+    };
+    let out = consh_pipeline(&dwi, graddev.as_ref(), &cfg, &progress)
+        .with_context(|| "continuous-b multi-tissue fit failed")?;
+    progress.finish_current();
+    if !args.quiet {
+        report(&args, &dwi, mask_voxels, &out);
+    }
+    for w in &out.warnings {
+        eprintln!("[consh] warning: {w}");
+    }
+    if let (Some(dir), Some(_)) = (&args.write_responses_to, &out.estimate) {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("create response directory {}", dir.display()))?;
+        write_response_txt(&out.responses.wm, &dir.join("wm_response_denseb.txt"))?;
+        write_response_txt(&out.responses.gm, &dir.join("gm_response_denseb.txt"))?;
+        write_response_txt(&out.responses.csf, &dir.join("csf_response_denseb.txt"))?;
+        if !args.quiet {
+            eprintln!("[consh]   wrote dense-b responses to {}", dir.display());
+        }
+    }
+    let result = out.fit;
+    let responses = out.responses;
+    let b_interp = out.b_interp;
+    let reference_b0 = out.reference_b0;
+    let mtnorm_target = out.normalization.as_ref().map(|d| d.target_sum_used);
+    // Global gain of the applied field: the multiplier a typical (geometric
+    // mean) inlier voxel received, the reciprocal of MRtrix3's `lognorm_scale`.
+    let mtnorm_scale = out
+        .normalization
+        .as_ref()
+        .and_then(|d| (d.lognorm_scale > 0.0).then(|| 1.0 / d.lognorm_scale));
+    let estimator = out.estimator;
 
     // ---- Write outputs ----
     let quant_meta = ContinuousBQuantMeta {
@@ -919,7 +765,7 @@ fn main() -> Result<()> {
         sh_degree: args.lmax_wm,
         graddev: args.graddev.clone(),
         b_interp,
-        response_estimator: args.read_responses_from.is_none().then(|| format!("{estimator:?}")),
+        response_estimator: estimator.map(|e| format!("{e:?}")),
     };
     if let Some(odx_path) = &args.odx {
         let directory = odx_path.extension().and_then(|s| s.to_str()) != Some("odx");

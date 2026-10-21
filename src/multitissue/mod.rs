@@ -6,6 +6,7 @@
 //! with response estimation and multi-tissue intensity normalization.
 
 pub mod consh;
+pub mod consh_pipeline;
 pub mod dhollander;
 pub mod forward;
 pub mod mtnormalise;
