@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+mod consh;
 mod models;
 
 use numpy::ndarray::{Array3, Array4};
@@ -400,5 +401,6 @@ fn _cs_dmri(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dti_fit_restore, m)?)?;
     m.add_function(wrap_pyfunction!(b0_mask, m)?)?;
     models::register(m)?;
+    consh::register(m)?;
     Ok(())
 }

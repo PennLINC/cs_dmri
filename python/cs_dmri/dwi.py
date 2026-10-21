@@ -44,9 +44,12 @@ class DWI:
         The source NIfTI header. Everything cs_dmri writes for this series
         uses it as the template, so qform/sform codes and units survive.
         :meth:`from_files` / :meth:`from_nibabel` set it.
+    source : path, optional
+        The file the series was read from, recorded as the source of exported
+        derivatives. :meth:`from_files` / :meth:`from_nibabel` set it.
     """
 
-    def __init__(self, data, gtab, *, affine=None, mask=None, header=None):
+    def __init__(self, data, gtab, *, affine=None, mask=None, header=None, source=None):
         self.data = as_volume(data)
         self.gtab = as_gradient_table(gtab)
         if len(self.gtab) != self.data.shape[3]:
@@ -56,6 +59,7 @@ class DWI:
             raise ValueError(f"affine must be 4x4, got {self.affine.shape}")
         self.mask = as_mask(mask, self.data.shape)
         self.header = header
+        self.source = None if source is None else str(source)
         self.warnings: tuple[str, ...] = ()
 
     # ------------------------------------------------------------ construction
@@ -91,7 +95,7 @@ class DWI:
             mask = np.asarray(mask_img.dataobj) > 0
         _spatial.emit(found, "DWI")
         dwi = cls(np.asarray(img.dataobj, dtype=np.float32), gtab, affine=img.affine, mask=mask,
-                  header=img.header.copy())
+                  header=img.header.copy(), source=img.get_filename())
         dwi.warnings = tuple(found)
         return dwi
 
@@ -99,7 +103,7 @@ class DWI:
         """Same data and gradients, different mask (mask-dependent caches reset)."""
         out = DWI.__new__(DWI)
         out.data, out.gtab, out.affine = self.data, self.gtab, self.affine
-        out.header, out.warnings = self.header, self.warnings
+        out.header, out.warnings, out.source = self.header, self.warnings, self.source
         if mask is not None and hasattr(mask, "dataobj"):
             _spatial.check_same_grid(mask, self.to_image(self.data[..., 0]), "mask")
             mask = np.asarray(mask.dataobj) > 0

@@ -241,3 +241,26 @@ fn consh_recovers_planted_tissues_and_fibers_on_non_shelled_qspace() {
         assert!(crossing_ok as f64 >= 0.9 * crossing_n as f64, "{estimator:?}: {crossing_ok}/{crossing_n}");
     }
 }
+
+#[test]
+fn consh_refuses_single_shell_data() {
+    use cs_dmri::multitissue::consh_pipeline::check_consh_sampling;
+    let full = synthetic_brain();
+    // b=0 plus the single shell |q|² = 8 (b = 1500).
+    let keep: Vec<usize> = (0..full.gtab.n_grads())
+        .filter(|&i| full.gtab.bvals[i] == 0.0 || (full.gtab.bvals[i] - 1500.0).abs() < 1.0)
+        .collect();
+    let gtab = GradientTable::new(
+        keep.iter().map(|&i| full.gtab.bvals[i]).collect(),
+        keep.iter().map(|&i| full.gtab.bvecs[i]).collect(),
+        Some(0.043),
+        Some(0.011),
+        None,
+    )
+    .unwrap();
+    let data = full.data.select(ndarray::Axis(3), &keep);
+    let single = DwiData::from_table(data, full.mask.clone(), gtab, BvecFrame::WorldRas, "s.nii.gz".into());
+    let err = check_consh_sampling(&single).unwrap_err().to_string();
+    assert!(err.contains("3 or more distinct b-values") && err.contains("b = 1500"), "{err}");
+    assert!(check_consh_sampling(&full).is_ok());
+}

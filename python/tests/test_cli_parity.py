@@ -84,3 +84,29 @@ def test_shore_l2_matches_cs_fit(pnc, tmp_path):
         fit = cs.ShoreModel(pnc.gtab, regularization="l2", allow_single_shell=True).fit(pnc)
     np.testing.assert_array_equal(fit.coefficients[pnc.mask], load(out)[pnc.mask])
     np.testing.assert_array_equal(fit.r2[pnc.mask], load(tmp_path / "coef_r2.nii.gz")[pnc.mask])
+
+
+# CONSH needs three or more distinct b-values, so it is checked on a
+# multi-shell series instead of the single-shell PNC one.
+MULTISHELL = REPO.parent / "qsiprep_testing/data/multishell_output/qsiprep/sub-ABCD/dwi/sub-ABCD_acq-10per000_space-T1w_desc-"
+
+
+@pytest.mark.skipif(not Path(f"{MULTISHELL}preproc_dwi.nii.gz").exists(), reason="multi-shell series absent")
+@pytest.mark.parametrize("estimator", ["kernel", "smooth", "dki"])
+def test_consh_pipeline_matches_consh(tmp_path, estimator):
+    files = [f"{MULTISHELL}preproc_dwi.nii.gz", f"{MULTISHELL}preproc_dwi.bval", f"{MULTISHELL}preproc_dwi.bvec"]
+    mask = f"{MULTISHELL}brain_mask.nii.gz"
+    run(BIN / "consh", "--dwi", files[0], "--bval", files[1], "--bvec", files[2], "--mask", mask, "--quiet",
+        "--threads", "4", "--response-estimator", estimator, "--output-wm", tmp_path / "wm.nii.gz",
+        "--output-gm", tmp_path / "gm.nii.gz", "--output-csf", tmp_path / "csf.nii.gz")
+    dwi = cs.DWI.from_files(*files, mask=mask)
+    fit = cs.consh_pipeline(dwi, estimator=estimator, n_threads=4)
+    np.testing.assert_array_equal(fit.wm[dwi.mask], load(tmp_path / "wm.nii.gz")[dwi.mask])
+    np.testing.assert_array_equal(fit.gm[dwi.mask], np.squeeze(load(tmp_path / "gm.nii.gz"))[dwi.mask])
+    np.testing.assert_array_equal(fit.noise_floor[dwi.mask],
+                                  np.squeeze(load(tmp_path / "wm_noisefloor.nii.gz"))[dwi.mask])
+
+
+def test_consh_refuses_single_shell_data(pnc):
+    with pytest.raises(ValueError, match="3 or more distinct b-values"):
+        cs.consh_pipeline(pnc)

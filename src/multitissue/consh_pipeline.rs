@@ -91,6 +91,77 @@ pub fn auto_response_estimator(b_shift_p95: Option<f64>, sigma_b: f64, b_interp:
     }
 }
 
+/// Output of [`estimate_dense_b_responses`].
+pub struct DenseBEstimate {
+    pub responses: ConshResponses,
+    /// The estimator used (`estimator` argument, or the automatic choice).
+    pub estimator: ResponseEstimator,
+    pub diagnostics: ResponseEstimationDiagnostics,
+    /// The tensor fit tissue selection used.
+    pub dti: DtiVolumeResult,
+    /// Upper end of the dense-b grid when a gradient-deviation field extended it.
+    pub grid_bmax: Option<f64>,
+}
+
+/// Dense-b responses from `dwi`, as [`consh_pipeline`] estimates them: RESTORE
+/// tensor fit (with per-voxel gradient tables from `graddev`), Dhollander tissue
+/// selection, dense-b rows. With a field the grid reaches the largest effective
+/// b. `estimator` `None` chooses with [`auto_response_estimator`], given
+/// whether the fit will interpolate in b (`b_interp`, implied by a field).
+pub fn estimate_dense_b_responses(
+    dwi: &DwiData,
+    graddev: Option<&VoxelGradDev>,
+    restore: &RestoreConfig,
+    responses: &ConshResponseConfig,
+    estimator: Option<ResponseEstimator>,
+    b_interp: bool,
+    observer: &impl PipelineObserver,
+) -> Result<DenseBEstimate> {
+    check_consh_sampling(dwi)?;
+    let grid_bmax = graddev.map(|gd| gd.max_effective_b(dwi, &dwi.mask));
+    let b_shift_p95 = graddev.map(|gd| gd.b_shift_quantile(dwi, &dwi.mask, 0.95));
+    let mut rcfg = *responses;
+    rcfg.estimator = estimator.unwrap_or_else(|| {
+        auto_response_estimator(b_shift_p95, rcfg.sigma_b, b_interp || graddev.is_some())
+    });
+    rcfg.grid_bmax = grid_bmax;
+    observer.stage(PipelineStage::Dti);
+    let dti = fit_volume_restore_graddev(
+        dwi,
+        restore,
+        DtiFitConfig { compute_diagnostics: false },
+        graddev,
+        || observer.voxel(),
+    )?;
+    observer.stage(PipelineStage::ResponseEstimation);
+    let (responses, diagnostics) = estimate_consh_responses_graddev(dwi, &dti, &rcfg, graddev)?;
+    Ok(DenseBEstimate { responses, estimator: rcfg.estimator, diagnostics, dti, grid_bmax })
+}
+
+/// Distinct b-values, b=0 included, CONSH needs: as for MRtrix3's
+/// `msmt_csd`, at least as many as the tissues it separates (WM, GM, CSF).
+pub const MIN_CONSH_B_VALUES: usize = 3;
+
+/// Refuse acquisitions with too few distinct b-values to separate three
+/// tissues. Single-shell data (b=0 and one b-value) belong to SS3T-CSD.
+pub fn check_consh_sampling(dwi: &DwiData) -> Result<()> {
+    let shells = crate::fit::dwi_shells(&dwi.gtab);
+    let has_b0 = dwi.gtab.bvals.iter().any(|&b| b <= dwi.gtab.b0_threshold);
+    let n = shells.len() + usize::from(has_b0);
+    if n < MIN_CONSH_B_VALUES {
+        let listed: Vec<String> = shells.iter().map(|b| format!("{b:.0}")).collect();
+        return Err(CsDmriError::Other(format!(
+            "CONSH separates three tissues, which needs diffusion data at {MIN_CONSH_B_VALUES} or \
+             more distinct b-values including b=0 (as MRtrix's msmt_csd needs as many shells as \
+             tissues); this series has {n} ({}b = {}). For single-shell data use single-shell \
+             three-tissue CSD (cs-ss3t-full, cs_dmri.ss3t_pipeline).",
+            if has_b0 { "b=0 and " } else { "" },
+            listed.join(", ")
+        )));
+    }
+    Ok(())
+}
+
 /// Run responses → CONSH → mtnormalise on `dwi`, with per-voxel gradient
 /// tables from `graddev` when given.
 pub fn consh_pipeline(
@@ -99,6 +170,7 @@ pub fn consh_pipeline(
     cfg: &ConshPipelineConfig,
     observer: &impl PipelineObserver,
 ) -> Result<ConshPipelineResult> {
+    check_consh_sampling(dwi)?;
     let mut consh = cfg.consh.clone();
     let grid_bmax = graddev.map(|gd| gd.max_effective_b(dwi, &dwi.mask));
     let b_shift_p95 = graddev.map(|gd| gd.b_shift_quantile(dwi, &dwi.mask, 0.95));
@@ -130,22 +202,17 @@ pub fn consh_pipeline(
         }
         ConshResponseSource::Estimate { restore, responses } => {
             let mut rcfg = *responses;
-            rcfg.estimator = cfg
-                .estimator
-                .unwrap_or_else(|| auto_response_estimator(b_shift_p95, rcfg.sigma_b, consh.b_interp));
             rcfg.step = consh.step;
-            rcfg.grid_bmax = grid_bmax;
-            observer.stage(PipelineStage::Dti);
-            let dti = fit_volume_restore_graddev(
+            let est = estimate_dense_b_responses(
                 dwi,
-                restore,
-                DtiFitConfig { compute_diagnostics: false },
                 graddev,
-                || observer.voxel(),
+                restore,
+                &rcfg,
+                cfg.estimator,
+                consh.b_interp,
+                observer,
             )?;
-            observer.stage(PipelineStage::ResponseEstimation);
-            let (r, diag) = estimate_consh_responses_graddev(dwi, &dti, &rcfg, graddev)?;
-            (r, Some(rcfg.estimator), Some((diag, dti)))
+            (est.responses, Some(est.estimator), Some((est.diagnostics, est.dti)))
         }
     };
 

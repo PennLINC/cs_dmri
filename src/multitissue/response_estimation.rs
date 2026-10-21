@@ -574,6 +574,11 @@ fn fit_zonal_sh_weighted(cos_angles: &[f64], amps: &[f64], w: &[f64], lmax: usiz
     }
 }
 
+/// Distinct non-zero b-values (within 50 s/mm²) the [`ResponseEstimator::Dki`]
+/// model needs: besides S0, which b=0 fixes, it has a diffusivity, a kurtosis
+/// term and an offset along b.
+pub const DKI_MIN_B_VALUES: usize = 3;
+
 /// Configuration for continuous-b response estimation.
 #[derive(Debug, Clone, Copy)]
 pub struct ConshResponseConfig {
@@ -672,6 +677,17 @@ pub fn estimate_consh_responses_graddev(
     cfg: &ConshResponseConfig,
     graddev: Option<&VoxelGradDev>,
 ) -> Result<(ConshResponses, ResponseEstimationDiagnostics)> {
+    if cfg.estimator == ResponseEstimator::Dki {
+        let shells = crate::fit::dwi_shells(&dwi.gtab);
+        if shells.len() < DKI_MIN_B_VALUES {
+            return Err(CsDmriError::Other(format!(
+                "the dki response model has three parameters in b besides S0 (diffusivity, \
+                 kurtosis and offset), so it needs diffusion-weighted data at {DKI_MIN_B_VALUES} or \
+                 more distinct b-values; this series has {}. Use the kernel or smooth estimator.",
+                shells.len()
+            )));
+        }
+    }
     let factor = (4.0 * PI).sqrt();
     let s = dwi.data.shape();
     let shape = (s[0], s[1], s[2]);
@@ -1038,6 +1054,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn weighted_zonal_fit_matches_unweighted_on_exact_data() {
         // On exact (noise-free) data, non-uniform weights must not change the
         // recovered coefficients (weighted LSQ of a consistent system).
@@ -1061,6 +1078,7 @@ mod tests {
             assert_abs_diff_eq!(r[j], r_true[j], epsilon = 1e-9);
         }
     }
+    #[test]
     fn consh_response_estimator_recovers_planted_wm_response() {
         use crate::io::dwi::DwiData;
         use crate::dti::DtiVolumeResult;
@@ -1403,6 +1421,7 @@ mod tests {
             ..Default::default()
         }
     }
+    #[test]
     fn common_reference_scaling_is_gain_free() {
         // A global receiver-gain change must cancel in S/ref exactly: the two
         // scans differ only by ×3.7 on every sample, so every response
@@ -1419,6 +1438,7 @@ mod tests {
             }
         }
     }
+    #[test]
     fn dki_estimator_recovers_planted_isotropic_decays_and_scaling() {
         // GM/CSF are mono-exponential, so DKI ISO + offset represents them
         // exactly; the common-reference b=0 amplitudes (CSF 2.6×, GM 0.8×)
@@ -1455,6 +1475,69 @@ mod tests {
     }
 
     /// Grid b-values of a dense-b response estimated with `test_cfg()` (step 50).
+    #[test]
+    fn dki_estimator_refuses_too_few_b_values() {
+        // b=0 and one non-zero b-value.
+        let (dwi, dti) = synthetic_scan(&[1000.0; 8], 2600.0, 1200.0, 1.0);
+        let keep: Vec<usize> =
+            (0..dwi.gtab.n_grads()).filter(|&i| dwi.gtab.bvals[i] <= 1000.0).collect();
+        let gtab = crate::qspace::GradientTable::new(
+            keep.iter().map(|&i| dwi.gtab.bvals[i]).collect(),
+            keep.iter().map(|&i| dwi.gtab.bvecs[i]).collect(),
+            Some(0.043),
+            Some(0.011),
+            None,
+        )
+        .unwrap();
+        let data = dwi.data.select(ndarray::Axis(3), &keep);
+        let dwi = DwiData::from_table(data, dwi.mask.clone(), gtab, dwi.bvec_frame, dwi.source_nifti.clone());
+        let cfg = ConshResponseConfig { estimator: ResponseEstimator::Dki, ..test_cfg() };
+        let err = estimate_consh_responses(&dwi, &dti, &cfg).err().expect("refused");
+        assert!(err.to_string().contains("3 or more distinct b-values"), "{err}");
+    }
+
+    #[test]
+    fn common_reference_scaling_preserves_intertissue_b0_ratios() {
+        // WM b=0 uniform at 1000 → reference = 1000. CSF at 2600 (the T2/PD
+        // contrast MRtrix responses carry), GM at 800. The b=0 rows must read
+        // 1.0·√4π, 2.6·√4π and 0.8·√4π — NOT all √4π, which is what the old
+        // per-voxel-S0 anchoring produced.
+        let factor = (4.0 * PI).sqrt();
+        let (dwi, dti) = synthetic_scan(&[1000.0; 8], 2600.0, 800.0, 1.0);
+        let (resp, diag) = estimate_consh_responses(&dwi, &dti, &test_cfg()).unwrap();
+
+        assert_abs_diff_eq!(diag.wm_b0_median, 1000.0, epsilon = 1e-6);
+        assert_abs_diff_eq!(resp.wm.coeffs[0][0], factor, epsilon = 1e-6);
+        assert_abs_diff_eq!(resp.csf.coeffs[0][0], 2.6 * factor, epsilon = 1e-4);
+        assert_abs_diff_eq!(resp.gm.coeffs[0][0], 0.8 * factor, epsilon = 1e-4);
+
+        // The DW rows carry the same tissue amplitude: CSF at grid b=1000
+        // (index 20) ≈ 2.6 · exp(-3e-3·1000) · √4π on the common scale.
+        assert_abs_diff_eq!(
+            resp.csf.coeffs[20][0],
+            2.6 * (-3.0e-3 * 1000.0_f64).exp() * factor,
+            epsilon = 6e-2
+        );
+    }
+
+    #[test]
+    fn wm_b0_anchor_is_mean_over_median_not_exactly_sqrt_4pi() {
+        // WM b=0 population [900, 1000×6, 1300]: median 1000, mean 1025. The
+        // reference is the median, the b=0 row is the mean over it — so the WM
+        // anchor lands at 1.025·√4π, and the pooled DW amplitudes carry the
+        // same 1.025 factor (each voxel contributes S/ref, averaged equally).
+        let factor = (4.0 * PI).sqrt();
+        let s0_wm = [900.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1300.0];
+        let (dwi, dti) = synthetic_scan(&s0_wm, 2600.0, 800.0, 1.0);
+        let (resp, diag) = estimate_consh_responses(&dwi, &dti, &test_cfg()).unwrap();
+
+        assert_abs_diff_eq!(diag.wm_b0_median, 1000.0, epsilon = 1e-6);
+        assert_abs_diff_eq!(resp.wm.coeffs[0][0], 1.025 * factor, epsilon = 1e-4);
+        // Grid b=1000 (index 20): r₀ scaled by the same mean/median factor.
+        let e = (-0.7e-3 * 1000.0_f64).exp();
+        assert_abs_diff_eq!(resp.wm.coeffs[20][0], 1.025 * e, epsilon = 4e-2);
+    }
+
     fn resp_grid_bs(resp: &ConshResponses) -> Vec<f64> {
         (0..resp.csf.coeffs.len()).map(|k| 50.0 * k as f64).collect()
     }
