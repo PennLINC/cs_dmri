@@ -43,6 +43,7 @@ user/shore
 user/dti
 user/multitissue
 user/consh
+user/consh_group
 user/export
 user/conventions
 ```

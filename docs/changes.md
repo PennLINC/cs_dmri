@@ -10,6 +10,8 @@
   responses across scans. Command-line tools `consh` and `consh-response`;
   Python `consh_pipeline`, `ConshModel`, `ConshFit`, `DenseBResponses` and
   `estimate_dense_b_responses`.
+- A walkthrough of a group ConSH analysis on a simulated compressed-sensing DSI
+  study, with the scripts that produce it.
 - `DWI.source` records the file a series was read from; exported derivatives
   name it as their source.
 

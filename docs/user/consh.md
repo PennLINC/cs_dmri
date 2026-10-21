@@ -139,7 +139,8 @@ to deconvolving the absolute signal, while keeping the ratio of penalty to data
 constant across voxels. It requires the final normalization, which then removes
 the smooth bias field and the remaining global scale.
 
-For a study, a group-average response is estimated in three passes:
+For a study, a group-average response is estimated in three passes ({doc}`consh_group`
+works through a complete example):
 
 ```bash
 # 1. responses for every scan
