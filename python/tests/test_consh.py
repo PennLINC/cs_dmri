@@ -130,10 +130,12 @@ def _amplitudes(sh, dirs):
 def test_model_fit_with_fixed_responses_matches_pipeline_without_normalization(brain):
     dwi, _ = brain
     resp = cs.estimate_dense_b_responses(dwi, estimator="kernel", **_fast())
+    s0_fit = cs.ConshModel(dwi.gtab, resp, quantitative=False).fit(dwi)
+    pipe = cs.consh_pipeline(dwi, responses=resp, quantitative=False, normalize=False)
+    np.testing.assert_array_equal(s0_fit.wm, pipe.wm)
+    assert s0_fit.external_responses and s0_fit.normalization is None
     model_fit = cs.ConshModel(dwi.gtab, resp).fit(dwi)
-    pipe = cs.consh_pipeline(dwi, responses=resp, normalize=False)
-    np.testing.assert_array_equal(model_fit.wm, pipe.wm)
-    assert model_fit.external_responses and model_fit.normalization is None
+    assert model_fit.quantitative and model_fit.normalization is None
     normalized = model_fit.mtnormalise()
     full = cs.consh_pipeline(dwi, responses=resp)
     np.testing.assert_allclose(normalized.wm, full.wm, rtol=1e-5, atol=1e-6)

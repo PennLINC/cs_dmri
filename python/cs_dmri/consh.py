@@ -193,7 +193,7 @@ class ConshModel:
         Fit a constant compartment that absorbs the magnitude noise floor.
     quantitative : bool
         Scale each voxel's coefficients by its b=0 signal (absolute signal
-        units) instead of S/S0.
+        units, the default); ``False`` keeps the per-voxel S/S0 scale.
     wm_ridge, wm_ridge_anchor, wm_ridge_relative
         L2 penalty on the WM fODF coefficients with l ≥ 2 (see ``consh
         --help``).
@@ -202,7 +202,7 @@ class ConshModel:
     """
 
     def __init__(self, gtab, responses: DenseBResponses, *, lmax_wm: int = 8, b_interp: bool = False,
-                 noise_floor: bool = True, quantitative: bool = False, wm_ridge: float = 0.0,
+                 noise_floor: bool = True, quantitative: bool = True, wm_ridge: float = 0.0,
                  wm_ridge_anchor: float = 0.0, wm_ridge_relative: bool = False, icls_max_iter: int = 2000,
                  bvec_frame: str = "auto"):
         self.gtab = as_gradient_table(gtab)
@@ -334,7 +334,7 @@ def _run(gtab, data, mask, affine, bvec_frame, *, responses: DenseBResponses | N
 def consh_pipeline(dwi, *, responses: DenseBResponses | None = None, graddev=None,
                    graddev_identity: str = "auto", estimator: str = "auto", step: float = 50.0,
                    sigma_b: float = 150.0, lmax_wm: int = 8, b_interp: bool = False, noise_floor: bool = True,
-                   quantitative: bool = False, normalize: bool = True,
+                   quantitative: bool = True, normalize: bool = True,
                    mtnorm_target: float | str = MTNORMALISE_TARGET, mtnorm_poly_order: int = 3,
                    mtnorm_balanced: bool = False, wm_ridge: float = 0.0, wm_ridge_anchor: float = 0.0,
                    wm_ridge_relative: bool = False, icls_max_iter: int = 2000, reference_mask=None,
@@ -343,13 +343,15 @@ def consh_pipeline(dwi, *, responses: DenseBResponses | None = None, graddev=Non
     mtnormalise: the ``consh`` pipeline in one call, with identical results.
 
     ``response_options`` go to the tissue selection and tensor fit (see
-    :func:`estimate_dense_b_responses`). ``quantitative=True`` writes fODFs in
-    absolute signal units and requires ``normalize``; for comparisons across
-    subjects, pass one group-average response (:meth:`DenseBResponses.pool`)
-    for every scan. ``mtnorm_target="median"`` keeps the median observed sum.
+    :func:`estimate_dense_b_responses`). fODFs are in absolute signal units,
+    which requires ``normalize``; ``quantitative=False`` writes them on the
+    per-voxel S/S0 scale instead. For comparisons across subjects, pass one
+    group-average response (:meth:`DenseBResponses.pool`) for every scan.
+    ``mtnorm_target="median"`` keeps the median observed sum.
     """
     if quantitative and not normalize:
-        raise ValueError("quantitative=True requires normalize=True")
+        raise ValueError("absolute signal units require normalize=True; pass quantitative=False for the "
+                         "per-voxel S/S0 scale")
     if isinstance(mtnorm_target, str):
         if mtnorm_target != "median":
             raise ValueError("mtnorm_target must be a number or 'median'")

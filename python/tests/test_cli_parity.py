@@ -92,15 +92,19 @@ MULTISHELL = REPO.parent / "qsiprep_testing/data/multishell_output/qsiprep/sub-A
 
 
 @pytest.mark.skipif(not Path(f"{MULTISHELL}preproc_dwi.nii.gz").exists(), reason="multi-shell series absent")
-@pytest.mark.parametrize("estimator", ["kernel", "smooth", "dki"])
-def test_consh_pipeline_matches_consh(tmp_path, estimator):
+@pytest.mark.parametrize("estimator,scale", [("kernel", "absolute"), ("smooth", "absolute"), ("dki", "absolute"),
+                                             ("kernel", "s0")])
+def test_consh_pipeline_matches_consh(tmp_path, estimator, scale):
     files = [f"{MULTISHELL}preproc_dwi.nii.gz", f"{MULTISHELL}preproc_dwi.bval", f"{MULTISHELL}preproc_dwi.bvec"]
     mask = f"{MULTISHELL}brain_mask.nii.gz"
+    extra = ["--per-voxel-s0"] if scale == "s0" else []
     run(BIN / "consh", "--dwi", files[0], "--bval", files[1], "--bvec", files[2], "--mask", mask, "--quiet",
         "--threads", "4", "--response-estimator", estimator, "--output-wm", tmp_path / "wm.nii.gz",
-        "--output-gm", tmp_path / "gm.nii.gz", "--output-csf", tmp_path / "csf.nii.gz")
+        "--output-gm", tmp_path / "gm.nii.gz", "--output-csf", tmp_path / "csf.nii.gz", *extra)
     dwi = cs.DWI.from_files(*files, mask=mask)
-    fit = cs.consh_pipeline(dwi, estimator=estimator, n_threads=4)
+    options = {"quantitative": False} if scale == "s0" else {}
+    fit = cs.consh_pipeline(dwi, estimator=estimator, n_threads=4, **options)
+    assert fit.quantitative == (scale == "absolute")
     np.testing.assert_array_equal(fit.wm[dwi.mask], load(tmp_path / "wm.nii.gz")[dwi.mask])
     np.testing.assert_array_equal(fit.gm[dwi.mask], np.squeeze(load(tmp_path / "gm.nii.gz"))[dwi.mask])
     np.testing.assert_array_equal(fit.noise_floor[dwi.mask],

@@ -180,7 +180,9 @@ pub struct ConshConfig {
     pub fit_noise_floor: bool,
     /// Quantitative (AFD) mode: rescale the fit back to **absolute** signal units
     /// by multiplying every fitted coefficient — WM, GM, CSF *and* the noise
-    /// floor — by that voxel's b=0 signal `S0`. Default false.
+    /// floor — by that voxel's b=0 signal `S0`. False in `Default` (the plain
+    /// S/S0 fit); the `consh` tool and the Python `consh_pipeline` turn it on
+    /// unless asked for the per-voxel S/S0 scale.
     ///
     /// The solve itself is unchanged. It fits `FOD ∗ R = S/S0`, and both the
     /// least-squares objective and the non-negativity cone are positively

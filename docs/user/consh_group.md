@@ -28,9 +28,9 @@ done
 ```
 
 `--write-responses-to` writes the scan's dense-b responses
-(`{wm,gm,csf}_response_denseb.txt`). The fit made with them, on the default
-per-voxel S/S0 scale, is not used further. When a gradient-deviation field is
-available, pass it with `--graddev` here and in step 3.
+(`{wm,gm,csf}_response_denseb.txt`). The fit made with them is not used
+further. When a gradient-deviation field is available, pass it with
+`--graddev` here and in step 3.
 
 ## 2. Pool the responses
 
@@ -51,18 +51,19 @@ for sub in $subjects; do
   dwi=$prep/$sub/dwi/${sub}_space-ACPC_desc-preproc_dwi
   consh --dwi $dwi.nii.gz --bval $dwi.bval --bvec $dwi.bvec \
         --mask $prep/$sub/dwi/${sub}_space-ACPC_desc-brain_mask.nii.gz \
-        --read-responses-from $out/responses/group --quantitative \
+        --read-responses-from $out/responses/group \
         --output-wm $out/$sub/${sub}_desc-wm_fod.nii.gz \
         --output-gm $out/$sub/${sub}_desc-gm.nii.gz \
         --output-csf $out/$sub/${sub}_desc-csf.nii.gz
 done
 ```
 
-`--quantitative` writes the fODFs in absolute signal units, and the final
-normalization removes the bias field and the remaining global scale. The
-white-matter fODF images use the MRtrix3 SH basis and can be passed to the
-MRtrix3 fixel-based analysis and SIFT2 tools. `--odx` writes one ODX file per
-scan in place of the three NIfTI images.
+The fODFs are in absolute signal units, and the final normalization removes
+the bias field and the remaining global scale, so that one unit of fiber
+density means the same in every scan. The white-matter fODF images use the
+MRtrix3 SH basis and can be passed to the MRtrix3 fixel-based analysis and
+SIFT2 tools. `--odx` writes one ODX file per scan in place of the three NIfTI
+images.
 
 ## In Python
 
@@ -73,7 +74,7 @@ dwis = [cs.DWI.from_files(f"{b}.nii.gz", f"{b}.bval", f"{b}.bvec", mask=m) for b
 group = cs.DenseBResponses.pool([cs.estimate_dense_b_responses(d) for d in dwis])
 group.save("derivatives/consh/responses/group")
 for sub, dwi in zip(subjects, dwis):
-    fit = cs.consh_pipeline(dwi, responses=group, quantitative=True)
+    fit = cs.consh_pipeline(dwi, responses=group)
     fit.to_odx(f"derivatives/consh/{sub}/{sub}_desc-group.odx")
 ```
 

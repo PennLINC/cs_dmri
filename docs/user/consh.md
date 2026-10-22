@@ -126,23 +126,32 @@ fitted white-matter fraction exceeds 0.7, in that order of preference. From
 Python, fits can also be exported to DSI Studio, dipy and MRtrix3 formats (see
 {doc}`export`).
 
-## Quantitative use
+## Signal units
 
 Fiber density (the apparent fiber density of Raffelt et al., 2012) is
 comparable across subjects only when the fODF amplitude is proportional to the
 signal and the same response functions are used for every subject (Dhollander,
-Clemente et al., 2021; Smith et al., 2022). By default ConSH fits each voxel's
-signal divided by its own b=0 signal, which makes fiber density a fraction of
-the voxel's signal. With `quantitative=True` (`--quantitative`) the fitted
-coefficients are multiplied back by the voxel's b=0 signal. This is equivalent
-to deconvolving the absolute signal, while keeping the ratio of penalty to data
-constant across voxels. It requires the final normalization, which then removes
-the smooth bias field and the remaining global scale.
+Clemente et al., 2021; Smith et al., 2022). ConSH therefore writes fODFs in
+absolute signal units: each voxel is fitted on the S/S0 scale (its signal
+divided by its own b=0 signal), and the fitted coefficients are multiplied back
+by the voxel's b=0 signal. This is equivalent to deconvolving the absolute
+signal, while keeping the ratio of penalty to data constant across voxels. It
+relies on the final normalization, which removes the smooth bias field and the
+remaining global scale.
+
+With `quantitative=False` (`--per-voxel-s0`) the fODFs stay on the per-voxel
+S/S0 scale, on which the tissue compartments of a voxel sum to about one. The
+orientations are the same on both scales, but on the S/S0 scale fiber density
+is a fraction of the voxel's signal: it falls where CSF, which is bright at
+b=0, shares the voxel, and in voxels with a small b=0 signal, at the edge of
+the brain or after denoising that removes the noise floor, the division can
+give very large spurious fODFs. The normalization can be skipped
+(`--no-normalize`) only on this scale.
 
 For a study, a group-average response is estimated in three passes: a response
 for every scan (`--write-responses-to`), one pooled response (`consh-response
-mean`), and every scan refit with it (`--read-responses-from` and
-`--quantitative`). {doc}`consh_group` gives the commands.
+mean`), and every scan refit with it (`--read-responses-from`).
+{doc}`consh_group` gives the commands.
 
 Pooling follows MRtrix3's `responsemean`: each scan's response is first rescaled
 by the geometric mean over rows of the ratio of the group's mean l=0 term to its
@@ -154,7 +163,7 @@ b-value and the white-matter SH order. Because ConSH uses every b-value, fiber
 densities from acquisitions with different maximum b-values are not on the same
 scale even with the same response, so a study should use one protocol.
 
-Further points for quantitative work:
+Further points for comparisons across subjects:
 
 - Keep the normalization target fixed (the default 1/√(4π)) rather than the
   median, so that the scale is the same for every subject.
@@ -164,5 +173,5 @@ Further points for quantitative work:
 - MRtrix3's fixel-based analysis and SIFT2 tools read the NIfTI outputs, or the
   white-matter fODF exported as an MRtrix3 SH image.
 - Peak thresholds given as a fraction of the median dominant-peak amplitude
-  (`--peak-min-amplitude-frac`) mean the same with and without absolute-scale
-  output, unlike absolute thresholds.
+  (`--peak-min-amplitude-frac`) mean the same on both scales and across
+  acquisitions, unlike absolute thresholds.
