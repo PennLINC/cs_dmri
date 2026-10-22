@@ -216,23 +216,13 @@ pub fn consh_pipeline(
         }
     };
 
-    if consh.quantitative {
-        if estimate.is_some() {
-            warnings.push(
-                "absolute-scale output with responses estimated from this scan: fiber density \
-                 units are then specific to this scan. For comparisons across subjects, use one \
-                 group-average response for every scan."
-                    .to_string(),
-            );
-        }
-        if !consh.fit_noise_floor {
-            warnings.push(
-                "absolute-scale output without the noise-floor compartment: scaling by S0 limits \
-                 the magnitude of spurious fODFs in low-S0 voxels but not their orientation \
-                 content, which the noise-floor compartment corrects."
-                    .to_string(),
-            );
-        }
+    if consh.quantitative && !consh.fit_noise_floor {
+        warnings.push(
+            "absolute-scale output without the noise-floor compartment: scaling by S0 limits \
+             the magnitude of spurious fODFs in low-S0 voxels but not their orientation \
+             content, which the noise-floor compartment corrects."
+                .to_string(),
+        );
     }
 
     observer.stage(PipelineStage::Consh);

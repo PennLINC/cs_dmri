@@ -60,7 +60,7 @@ Options:
           Read dense-b responses from this directory (the three `{wm,gm,csf}_response_denseb.txt` files `--write-responses-to` writes, or a group average from `consh-response mean`) instead of estimating them. The tensor fit and tissue selection are skipped, and every scan fit with the same files is deconvolved with the same responses. The response rows must match this series' dense-b grid (same maximum b and step)
 
       --no-normalize
-          Skip the final multi-tissue intensity normalization (mtnormalise)
+          Skip the final multi-tissue intensity normalization (mtnormalise). Output in absolute signal units relies on it, so this requires --per-voxel-s0
 
       --no-noise-floor
           Fit without the constant noise-floor compartment (fitted by default).
@@ -103,14 +103,14 @@ Options:
       --peak-min-amplitude <PEAK_MIN_AMPLITUDE>
           Drop WM peaks whose fODF amplitude is below this value. Removes shallow spurious lobes, which become more frequent under strong penalties. 0 (default) keeps all peaks; values of 0.05–0.15 on the normalized fODF scale are typical.
           
-          The threshold is tied to the absolute fODF scale, which changes with `--quantitative` and between acquisitions; `--peak-min-amplitude-frac` is preferable for comparisons across subjects.
+          The threshold is tied to the absolute fODF scale, which changes with `--per-voxel-s0` and between acquisitions; `--peak-min-amplitude-frac` is preferable for comparisons across subjects.
           
           [default: 0]
 
       --peak-min-amplitude-frac <PEAK_MIN_AMPLITUDE_FRAC>
           Scale-invariant form of `--peak-min-amplitude`: the threshold is this fraction of the volume's median dominant-peak amplitude (the median, over masked voxels with at least one peak, of each voxel's largest peak).
           
-          The reference and the peaks scale together under any global change of fODF units, so one value means the same with or without `--quantitative` and across acquisitions. 0 (default) is off; values of 0.10–0.25 are typical.
+          The reference and the peaks scale together under any global change of fODF units, so one value means the same with or without `--per-voxel-s0` and across acquisitions. 0 (default) is off; values of 0.10–0.25 are typical.
           
           [default: 0]
 
@@ -119,12 +119,12 @@ Options:
           
           If omitted, the reference is taken from the Dhollander single-fiber WM voxels when responses are estimated, or from voxels where the fitted WM compartment dominates when they are read from disk.
 
-      --quantitative
-          Write fODFs in absolute signal units, multiplying each voxel's fitted coefficients by its b=0 signal, instead of the default per-voxel S/S0 scale. The WM fODF amplitude is then proportional to the signal (and so to intra-cellular volume at high b), which apparent fiber density and SIFT2 require and per-voxel S/S0 normalization removes (Smith et al. 2022; Dhollander, Clemente et al. 2021).
+      --per-voxel-s0
+          Write fODFs on the per-voxel S/S0 scale: each voxel's signal divided by its own b=0 signal, so that its tissue compartments sum to about one, instead of in absolute signal units (the default).
           
-          The responses are scaled by one per-scan reference (the median b=0 of the single-fiber WM voxels), which keeps the relative amplitudes of the tissues as MRtrix's `amp2response` does. A common scale across subjects comes from a shared group-average response (`consh-response mean`, read with --read-responses-from), as in MRtrix; the remaining per-subject scale is removed by the final normalization, so this option cannot be combined with --no-normalize.
+          By default the fitted coefficients are multiplied by each voxel's b=0 signal, so that the WM fODF amplitude is proportional to the signal (and so to intra-cellular volume at high b), which apparent fiber density and SIFT2 require and per-voxel S/S0 normalization removes (Smith et al. 2022; Dhollander, Clemente et al. 2021). The responses are scaled by one per-scan reference (the median b=0 of the single-fiber WM voxels), which keeps the relative amplitudes of the tissues as MRtrix's `amp2response` does; a common scale across subjects comes from a shared group-average response (`consh-response mean`, read with --read-responses-from), and the remaining per-subject scale is removed by the final normalization.
           
-          Scaling by S0 also suppresses the large spurious fODFs of low-S0 voxels, which come from dividing the noise floor by S0. It corrects only their magnitude; the noise-floor compartment corrects their orientation content.
+          On the S/S0 scale, fiber density is a fraction of each voxel's signal: it falls where CSF, which is bright at b=0, shares the voxel, and in voxels with a small b=0 signal (at the edge of the brain, or after denoising that removes the noise floor) dividing by S0 can give very large spurious fODFs. The fODF orientations are the same on both scales.
 
       --dh-erode <DH_ERODE>
           Erosion passes applied to the brain mask before tissue selection
