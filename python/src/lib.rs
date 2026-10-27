@@ -7,8 +7,10 @@
 //! these functions.
 //!
 //! Conventions:
-//! - volumes are `float32` `(X, Y, Z, N)`, masks `bool` `(X, Y, Z)`, any
-//!   memory layout (QC functions read them without copying; fits copy once);
+//! - volumes are `float32` `(X, Y, Z, N)`, masks `bool` `(X, Y, Z)`. Fits
+//!   borrow a C-contiguous volume (each voxel's signal contiguous, the order
+//!   they read it) and copy any other layout once; QC functions read any
+//!   layout without copying;
 //! - gradient tables arrive as `bvals (N,)` + `bvecs (N, 3)` float64;
 //! - heavy work releases the GIL and, when `n_threads` is given, runs on a
 //!   private rayon pool of that size (the global pool is never configured).
@@ -280,11 +282,14 @@ fn qc_contrast_pairs(
 // ------------------------------------------------------------------ DTI
 
 /// Owned `DwiData` for the fitting entry points (they need owned arrays).
-pub(crate) fn dwi_data(
-    data: &PyReadonlyArray4<f32>,
+/// A `DwiData` that borrows numpy's buffer when it is C-contiguous (each
+/// voxel's signal contiguous, as the fits read it) and copies it once into
+/// that layout otherwise.
+pub(crate) fn dwi_data<'a>(
+    data: &'a PyReadonlyArray4<f32>,
     mask: &PyReadonlyArray3<bool>,
     gtab: GradientTable,
-) -> PyResult<cs_dmri::io::dwi::DwiData> {
+) -> PyResult<cs_dmri::io::dwi::DwiData<'a>> {
     let d = data.as_array();
     check_volume(&d, gtab.n_grads())?;
     let m = mask.as_array();
@@ -295,8 +300,8 @@ pub(crate) fn dwi_data(
             &d.shape()[..3]
         )));
     }
-    Ok(cs_dmri::io::dwi::DwiData::from_table(
-        d.to_owned(),
+    Ok(cs_dmri::io::dwi::DwiData::from_view(
+        d,
         m.to_owned(),
         gtab,
         cs_dmri::qspace::BvecFrame::ImageAxis,
@@ -382,6 +387,20 @@ fn b0_mask<'py>(
     Ok(mean.mapv(|v| v > 0.01 * max).into_pyarray_bound(py))
 }
 
+/// Read a 4D NIfTI as float32 `(X, Y, Z, N)` in C order, streaming one volume
+/// at a time, so a series stored as float64 is never held whole in that type.
+/// The array is handed to numpy without a copy.
+#[pyfunction]
+fn read_dwi_volume<'py>(
+    py: Python<'py>,
+    path: std::path::PathBuf,
+) -> PyResult<Bound<'py, numpy::PyArray4<f32>>> {
+    let data = py
+        .allow_threads(|| cs_dmri::io::dwi::read_dwi_volume(&path))
+        .map_err(map_err)?;
+    Ok(data.into_pyarray_bound(py))
+}
+
 #[pyfunction]
 fn version() -> &'static str {
     cs_dmri::VERSION
@@ -390,6 +409,7 @@ fn version() -> &'static str {
 #[pymodule]
 fn _cs_dmri(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
+    m.add_function(wrap_pyfunction!(read_dwi_volume, m)?)?;
     m.add_function(wrap_pyfunction!(qc_assess, m)?)?;
     m.add_function(wrap_pyfunction!(qc_neighboring_dwi_correlation, m)?)?;
     m.add_function(wrap_pyfunction!(qc_dwi_contrast_ratio, m)?)?;

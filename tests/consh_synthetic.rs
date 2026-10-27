@@ -82,7 +82,7 @@ fn zeppelin(b: f64, g: [f64; 3], axis: [f64; 3]) -> f64 {
     (-b * (d_perp + (d_par - d_perp) * c * c)).exp()
 }
 
-fn synthetic_brain() -> DwiData {
+fn synthetic_brain() -> DwiData<'static> {
     let gtab = dsi_table();
     let n = gtab.n_grads();
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);

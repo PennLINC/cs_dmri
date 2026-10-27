@@ -198,7 +198,7 @@ mod tests {
 
     const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
-    fn dwi_with(bvals: Vec<f64>, bvecs_vox: Vec<[f64; 3]>, rot: [[f64; 3]; 3]) -> DwiData {
+    fn dwi_with(bvals: Vec<f64>, bvecs_vox: Vec<[f64; 3]>, rot: [[f64; 3]; 3]) -> DwiData<'static> {
         let mut bvecs = bvecs_vox.clone();
         crate::qspace::rotate_bvecs(&mut bvecs, &rot);
         let n = bvals.len();

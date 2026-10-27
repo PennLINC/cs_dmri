@@ -850,7 +850,7 @@ mod tests {
 
     /// A 2×2×1 series of an isotropic decay, on the given non-zero shells,
     /// with 40 directions per shell and two b=0 volumes.
-    fn series(shells: &[f64]) -> DwiData {
+    fn series(shells: &[f64]) -> DwiData<'static> {
         let mut bvals = vec![0.0, 0.0];
         let mut bvecs = vec![[0.0, 0.0, 1.0]; 2];
         for &b in shells {

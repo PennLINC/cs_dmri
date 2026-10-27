@@ -313,7 +313,7 @@ fn main() -> Result<()> {
 
     // The fit is done: from here on only the mask and gradient metadata are
     // used, so release the signal before writing outputs and building the ODX.
-    dwi.data = ndarray::Array4::zeros((0, 0, 0, 0));
+    dwi.data = ndarray::Array4::zeros((0, 0, 0, 0)).into();
 
     let threads_used = effective_thread_count();
     let provenance = provenance_builder.map(|b| b.finish(threads_used));
