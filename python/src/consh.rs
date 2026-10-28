@@ -10,7 +10,7 @@ use pyo3::types::PyDict;
 
 use cs_dmri::dti::RestoreConfig;
 use cs_dmri::graddev::VoxelGradDev;
-use cs_dmri::io::dwi::DwiData;
+use cs_dmri::io::dwi::{DwiData, standard_layout};
 use cs_dmri::io::odx_out::{
     ContinuousBQuantMeta, GeneratedBy, ReferenceB0Source, write_continuous_b_odx_with_affine,
 };
@@ -82,15 +82,15 @@ fn reference_source_name(s: ReferenceB0Source) -> &'static str {
 /// A `DwiData` whose gradient table is `rotation · bvecs` (the fit frame) while
 /// keeping the voxel-axis directions, which a gradient-deviation field acts on.
 #[allow(clippy::too_many_arguments)]
-fn dwi_with_frame(
-    data: &PyReadonlyArray4<f32>,
+fn dwi_with_frame<'a>(
+    data: &'a PyReadonlyArray4<f32>,
     mask: &PyReadonlyArray3<bool>,
     bvals: &PyReadonlyArray1<f64>,
     bvecs: &PyReadonlyArray2<f64>,
     rotation: [[f64; 3]; 3],
     world: bool,
     b0_threshold: f64,
-) -> PyResult<DwiData> {
+) -> PyResult<DwiData<'a>> {
     let d = data.as_array();
     let m = mask.as_array();
     let bv = bvecs.as_array();
@@ -124,7 +124,7 @@ fn dwi_with_frame(
     let mut gtab = GradientTable::new(bvals, fit, None, None, Some(TORTOISE_DEFAULT_GMAX)).map_err(map_err)?;
     gtab.b0_threshold = b0_threshold;
     Ok(DwiData {
-        data: d.to_owned(),
+        data: standard_layout(d),
         mask: m.to_owned(),
         gtab,
         bvec_frame: if world { BvecFrame::WorldRas } else { BvecFrame::ImageAxis },

@@ -1269,7 +1269,7 @@ mod tests {
         s0_csf: f64,
         s0_gm: f64,
         gain: f64,
-    ) -> (crate::io::dwi::DwiData, crate::dti::DtiVolumeResult) {
+    ) -> (crate::io::dwi::DwiData<'static>, crate::dti::DtiVolumeResult) {
         use crate::io::dwi::DwiData;
         use crate::dti::DtiVolumeResult;
         use crate::qspace::{BvecFrame, GradientTable};

@@ -21,7 +21,7 @@ use ndarray::{Array3, Array4};
 use std::path::PathBuf;
 
 /// Build a tiny synthetic DWI volume from a known coefficient pattern.
-fn synth_dwi(nx: usize, ny: usize, nz: usize) -> (DwiData, ShoreBasis, nalgebra::DMatrix<f64>) {
+fn synth_dwi(nx: usize, ny: usize, nz: usize) -> (DwiData<'static>, ShoreBasis, nalgebra::DMatrix<f64>) {
     // Single-shell + b0, 32 directions on an icosahedron-ish spread.
     let bvecs: Vec<[f64; 3]> = (0..32)
         .map(|i| {

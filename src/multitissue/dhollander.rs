@@ -878,7 +878,7 @@ mod tests {
     /// A 20³ phantom in three axial slabs — CSF (fast, isotropic), GM (slow,
     /// isotropic), WM (anisotropic) — with a slight in-slab diffusivity and FA
     /// gradient so the top-N selections have something to rank.
-    fn slab_phantom() -> (DwiData, DtiVolumeResult, usize, usize) {
+    fn slab_phantom() -> (DwiData<'static>, DtiVolumeResult, usize, usize) {
         let n = 20usize;
         let csf_end = 7usize; // z < 7
         let gm_end = 13usize; // 7 <= z < 13; WM above

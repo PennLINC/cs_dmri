@@ -15,6 +15,38 @@ from .gradients import GradientTable, as_gradient_table
 
 __all__ = ["DWI"]
 
+#: Volumes per nibabel read when an image cannot be streamed by the compiled reader.
+_VOLUME_BLOCK = 16
+
+
+def _read_series(img) -> np.ndarray:
+    """``img``'s data as C-ordered float32 (each voxel's signal contiguous).
+
+    A NIfTI file still on disk is streamed by the compiled reader one volume at a
+    time, converting each to float32 as it arrives, so a float64 file is never held
+    whole as float64. Other images (in memory, other formats, NIfTI variants the
+    reader does not handle) are read through nibabel a block of volumes at a time,
+    with the file kept open so a gzip stream is decompressed once rather than from
+    the start for every block.
+    """
+    import nibabel as nib
+
+    path = img.get_filename()
+    on_disk = (path is not None and str(path).endswith((".nii", ".nii.gz"))
+               and isinstance(img, (nib.Nifti1Image, nib.Nifti2Image)) and nib.is_proxy(img.dataobj))
+    if on_disk:
+        try:
+            return _cs_dmri.read_dwi_volume(str(path))
+        except ValueError:
+            pass
+        source = nib.load(path, keep_file_open=True).dataobj
+    else:
+        source = img.dataobj
+    out = np.empty(img.shape, dtype=np.float32)
+    for k in range(0, img.shape[3], _VOLUME_BLOCK):
+        out[..., k:k + _VOLUME_BLOCK] = source[..., k:k + _VOLUME_BLOCK]
+    return out
+
 
 class DWI:
     """A diffusion-weighted series: data, gradient table, affine and mask.
@@ -32,7 +64,9 @@ class DWI:
     Parameters
     ----------
     data : array (X, Y, Z, N)
-        Stored as float32 (no copy if it already is).
+        Stored as C-ordered float32, so each voxel's signal is contiguous: the
+        order the fits read it in, and the layout they borrow without copying.
+        No copy if it already is.
     gtab : GradientTable, dipy gradient table, or ``(bvals, bvecs)``
     affine : array (4, 4), optional
         Voxel-to-world transform. Needed for anything world-space (voxel size,
@@ -50,7 +84,7 @@ class DWI:
     """
 
     def __init__(self, data, gtab, *, affine=None, mask=None, header=None, source=None):
-        self.data = as_volume(data)
+        self.data = np.ascontiguousarray(as_volume(data))
         self.gtab = as_gradient_table(gtab)
         if len(self.gtab) != self.data.shape[3]:
             raise ValueError(f"data has {self.data.shape[3]} volumes but the gradient table has {len(self.gtab)}")
@@ -94,8 +128,8 @@ class DWI:
             _spatial.check_same_grid(mask_img, img, "mask")
             mask = np.asarray(mask_img.dataobj) > 0
         _spatial.emit(found, "DWI")
-        dwi = cls(np.asarray(img.dataobj, dtype=np.float32), gtab, affine=img.affine, mask=mask,
-                  header=img.header.copy(), source=img.get_filename())
+        dwi = cls(_read_series(img), gtab, affine=img.affine, mask=mask, header=img.header.copy(),
+                  source=img.get_filename())
         dwi.warnings = tuple(found)
         return dwi
 
