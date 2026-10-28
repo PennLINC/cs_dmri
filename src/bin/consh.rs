@@ -143,7 +143,9 @@ struct Cli {
     read_responses_from: Option<PathBuf>,
 
     /// Skip the final multi-tissue intensity normalization (mtnormalise).
-    #[arg(long)]
+    /// Output in absolute signal units relies on it, so this requires
+    /// --per-voxel-s0.
+    #[arg(long, requires = "per_voxel_s0")]
     no_normalize: bool,
 
     /// Fit without the constant noise-floor compartment (fitted by default).
@@ -207,7 +209,7 @@ struct Cli {
     /// scale are typical.
     ///
     /// The threshold is tied to the absolute fODF scale, which changes with
-    /// `--quantitative` and between acquisitions; `--peak-min-amplitude-frac`
+    /// `--per-voxel-s0` and between acquisitions; `--peak-min-amplitude-frac`
     /// is preferable for comparisons across subjects.
     #[arg(long, default_value_t = 0.0)]
     peak_min_amplitude: f32,
@@ -217,7 +219,7 @@ struct Cli {
     ///
     /// The reference and the peaks scale together under any global change of
     /// fODF units, so one value means the same with or without
-    /// `--quantitative` and across acquisitions. 0 (default) is off; values of
+    /// `--per-voxel-s0` and across acquisitions. 0 (default) is off; values of
     /// 0.10–0.25 are typical.
     #[arg(long, default_value_t = 0.0, conflicts_with = "peak_min_amplitude")]
     peak_min_amplitude_frac: f32,
@@ -232,27 +234,28 @@ struct Cli {
     #[arg(long, value_name = "NIFTI")]
     reference_mask: Option<PathBuf>,
 
-    /// Write fODFs in absolute signal units, multiplying each voxel's fitted
-    /// coefficients by its b=0 signal, instead of the default per-voxel S/S0
-    /// scale. The WM fODF amplitude is then proportional to the signal (and so
-    /// to intra-cellular volume at high b), which apparent fiber density and
+    /// Write fODFs on the per-voxel S/S0 scale: each voxel's signal divided by
+    /// its own b=0 signal, so that its tissue compartments sum to about one,
+    /// instead of in absolute signal units (the default).
+    ///
+    /// By default the fitted coefficients are multiplied by each voxel's b=0
+    /// signal, so that the WM fODF amplitude is proportional to the signal (and
+    /// so to intra-cellular volume at high b), which apparent fiber density and
     /// SIFT2 require and per-voxel S/S0 normalization removes (Smith et al.
-    /// 2022; Dhollander, Clemente et al. 2021).
+    /// 2022; Dhollander, Clemente et al. 2021). The responses are scaled by one
+    /// per-scan reference (the median b=0 of the single-fiber WM voxels), which
+    /// keeps the relative amplitudes of the tissues as MRtrix's `amp2response`
+    /// does; a common scale across subjects comes from a shared group-average
+    /// response (`consh-response mean`, read with --read-responses-from), and
+    /// the remaining per-subject scale is removed by the final normalization.
     ///
-    /// The responses are scaled by one per-scan reference (the median b=0 of
-    /// the single-fiber WM voxels), which keeps the relative amplitudes of the
-    /// tissues as MRtrix's `amp2response` does. A common scale across subjects
-    /// comes from a shared group-average response (`consh-response mean`, read
-    /// with --read-responses-from), as in MRtrix; the remaining per-subject
-    /// scale is removed by the final normalization, so this option cannot be
-    /// combined with --no-normalize.
-    ///
-    /// Scaling by S0 also suppresses the large spurious fODFs of low-S0 voxels,
-    /// which come from dividing the noise floor by S0. It corrects only their
-    /// magnitude; the noise-floor compartment corrects their orientation
-    /// content.
-    #[arg(long, conflicts_with = "no_normalize")]
-    quantitative: bool,
+    /// On the S/S0 scale, fiber density is a fraction of each voxel's signal:
+    /// it falls where CSF, which is bright at b=0, shares the voxel, and in
+    /// voxels with a small b=0 signal (at the edge of the brain, or after
+    /// denoising that removes the noise floor) dividing by S0 can give very
+    /// large spurious fODFs. The fODF orientations are the same on both scales.
+    #[arg(long)]
+    per_voxel_s0: bool,
 
     // ---- response-estimation (Dhollander tissue selection) knobs ----
     /// Erosion passes applied to the brain mask before tissue selection.
@@ -685,7 +688,7 @@ fn main() -> Result<()> {
             l2_anchor_slack: args.wm_ridge_anchor,
             wm_ridge_relative: args.wm_ridge_relative,
             fit_noise_floor: !args.no_noise_floor,
-            quantitative: args.quantitative,
+            quantitative: !args.per_voxel_s0,
             b_interp: args.b_interp,
             grid_bmax: None,
         },
@@ -706,8 +709,8 @@ fn main() -> Result<()> {
         if args.read_responses_from.is_some() {
             eprintln!("[consh] stage 1/3: reading dense-b responses (no tensor fit or estimation)");
         }
-        if args.quantitative {
-            eprintln!("[consh]   fODFs in absolute signal units (scaled by each voxel's S0)");
+        if args.per_voxel_s0 {
+            eprintln!("[consh]   fODFs on the per-voxel S/S0 scale");
         }
     }
     let progress = StageProgress {
@@ -756,7 +759,7 @@ fn main() -> Result<()> {
             version: cs_dmri::VERSION.into(),
             description: "Continuous-b multi-tissue CSD for non-shelled q-space.".into(),
         },
-        quantitative: args.quantitative,
+        quantitative: !args.per_voxel_s0,
         reference_b0,
         intensity_normalization_target: mtnorm_target,
         intensity_normalization_scale: mtnorm_scale,

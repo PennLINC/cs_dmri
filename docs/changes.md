@@ -6,8 +6,9 @@
   dense-b response estimation with three row estimators (Gaussian-in-b kernel,
   constrained smooth fit, and the parametric response of Morez et al., 2021),
   joint deconvolution with an optional noise-floor compartment, per-voxel
-  gradient-nonlinearity correction, absolute-scale output, and pooling of
-  responses across scans. Command-line tools `consh` and `consh-response`;
+  gradient-nonlinearity correction, output in absolute signal units (or on
+  the per-voxel S/S0 scale with `--per-voxel-s0`), and pooling of responses
+  across scans. Command-line tools `consh` and `consh-response`;
   Python `consh_pipeline`, `ConshModel`, `ConshFit`, `DenseBResponses` and
   `estimate_dense_b_responses`.
 - A page with the commands for a group ConSH analysis.
