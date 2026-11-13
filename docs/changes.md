@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 0.3.0
 
 - Continuous-b multi-tissue CSD (ConSH) for non-shelled and multi-shell data:
   dense-b response estimation with three row estimators (Gaussian-in-b kernel,
@@ -12,6 +12,8 @@
   Python `consh_pipeline`, `ConshModel`, `ConshFit`, `DenseBResponses` and
   `estimate_dense_b_responses`.
 - A page with the commands for a group ConSH analysis.
+- Loading a DWI streams its volumes into a voxel-contiguous float32 array, and
+  numpy inputs are borrowed rather than copied, lowering peak memory.
 - `DWI.source` records the file a series was read from; exported derivatives
   name it as their source.
 
