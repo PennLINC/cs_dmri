@@ -308,7 +308,7 @@ dependencies = [
  "nalgebra",
  "ndarray",
  "nifti",
- "odx-rs 0.3.3",
+ "odx-rs",
  "rand",
  "rand_chacha",
  "rayon",
@@ -326,7 +326,7 @@ dependencies = [
  "cs_dmri",
  "ndarray",
  "numpy",
- "odx-rs 0.3.0",
+ "odx-rs",
  "pyo3",
  "rayon",
  "serde",
@@ -935,31 +935,6 @@ dependencies = [
  "num-traits",
  "pyo3",
  "rustc-hash",
-]
-
-[[package]]
-name = "odx-rs"
-version = "0.3.0"
-source = "git+https://github.com/PennLINC/odx-rs?tag=v0.3.0#d2defbb3be39247c655ccd8e81f934e4ce87f283"
-dependencies = [
- "bytemuck",
- "clap",
- "clap_complete",
- "flate2",
- "half",
- "hdf5-metno",
- "itk-transforms-rs",
- "kiddo",
- "memmap2",
- "nalgebra",
- "ndarray",
- "nifti",
- "serde",
- "serde_json",
- "statrs",
- "tempfile",
- "thiserror",
- "zip",
 ]
 
 [[package]]
