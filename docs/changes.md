@@ -1,5 +1,14 @@
 # Changes
 
+## 0.3.1
+
+- Peaks written to ODX no longer hold the same fibre twice. The peak finder
+  (odx-rs 0.3.3) applied its 25° separation rule before refining each peak on
+  the SH series, so two seeds on one lobe near the edge of its search
+  hemisphere could refine onto the same axis, usually with opposite signs.
+  In 0.3.0 ConSH archives this added 7–18% duplicate fixels. SH coefficients
+  and scalar maps are unchanged; re-export to correct existing peaks.
+
 ## 0.3.0
 
 - Continuous-b multi-tissue CSD (ConSH) for non-shelled and multi-shell data:

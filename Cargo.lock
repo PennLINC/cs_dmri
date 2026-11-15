@@ -299,7 +299,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "cs_dmri"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "approx",
@@ -308,7 +308,7 @@ dependencies = [
  "nalgebra",
  "ndarray",
  "nifti",
- "odx-rs",
+ "odx-rs 0.3.3",
  "rand",
  "rand_chacha",
  "rayon",
@@ -320,13 +320,13 @@ dependencies = [
 
 [[package]]
 name = "cs_dmri_py"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "cs_dmri",
  "ndarray",
  "numpy",
- "odx-rs",
+ "odx-rs 0.3.0",
  "pyo3",
  "rayon",
  "serde",
@@ -941,6 +941,31 @@ dependencies = [
 name = "odx-rs"
 version = "0.3.0"
 source = "git+https://github.com/PennLINC/odx-rs?tag=v0.3.0#d2defbb3be39247c655ccd8e81f934e4ce87f283"
+dependencies = [
+ "bytemuck",
+ "clap",
+ "clap_complete",
+ "flate2",
+ "half",
+ "hdf5-metno",
+ "itk-transforms-rs",
+ "kiddo",
+ "memmap2",
+ "nalgebra",
+ "ndarray",
+ "nifti",
+ "serde",
+ "serde_json",
+ "statrs",
+ "tempfile",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "odx-rs"
+version = "0.3.3"
+source = "git+https://github.com/PennLINC/odx-rs?tag=v0.3.3#f6668e8c575ddf34427be62f83f75de967c29cad"
 dependencies = [
  "bytemuck",
  "clap",

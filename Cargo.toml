@@ -4,7 +4,7 @@ members = [".", "python"]
 # Single source of truth for the version: the cs_dmri crate, the Python
 # extension crate and the wheel (pyproject `dynamic = ["version"]`) all read it.
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "(MIT OR Apache-2.0) AND MPL-2.0 AND BSD-3-Clause"
 repository = "https://github.com/PennLINC/cs_dmri"
@@ -80,7 +80,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 anyhow = "1"
-odx-rs = { git = "https://github.com/PennLINC/odx-rs", tag = "v0.3.0" }
+odx-rs = { git = "https://github.com/PennLINC/odx-rs", tag = "v0.3.3" }
 mimalloc = { version = "0.1", default-features = false, optional = true }
 
 [features]
